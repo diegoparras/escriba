@@ -1,0 +1,251 @@
+<div align="center">
+
+# ✍️ Escriba
+
+**Qualsiasi documento in Markdown pulito e anonimo — pronto per gli LLM.**
+
+Un’applicazione web auto‑ospitabile basata su [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-e07f5c.svg)](../../LICENSE)
+[![Immagine Docker](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Fescriba-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/escriba/pkgs/container/escriba)
+[![UI: 7 lingue](https://img.shields.io/badge/UI-7%20lingue-f0a98c.svg)](#-internazionalizzazione)
+![Auto-ospitato](https://img.shields.io/badge/auto--ospitato-✓-30d158.svg)
+
+<img src="../../assets/demo.gif" alt="Demo di Escriba" width="840">
+
+📖 **Manuale completo (PDF):** [`docs/Escriba-Manual.it.pdf`](../Escriba-Manual.it.pdf)
+
+[English](../../README.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · **Italiano** · [中文](README.zh.md) · [日本語](README.ja.md)
+
+</div>
+
+---
+
+## ✨ Funzionalità
+
+- 📄 **Documenti** — PDF, Word, Excel, PowerPoint, HTML, CSV, EPUB, ZIP e altro.
+- 🖼️ **Immagini** — OCR automatico (Tesseract); descrizione tramite IA opzionale.
+- 🎙️🎬 **Audio e video** — trascrizione locale e offline con Whisper (mp3, wav, mp4, mov, mkv…).
+- 🔗 **URL e YouTube** — converte una pagina web o ottiene la trascrizione di un video YouTube.
+- 🔍 **OCR intelligente** — il testo nelle immagini viene riconosciuto automaticamente; i PDF scansionati **e ruotati** vengono rilevati, elaborati con OCR e raddrizzati al volo.
+- 🤖 **IA opzionale** — OpenAI, Google Gemini (AI Studio) o OpenRouter, con valore predefinito **«Senza IA»**. I modelli vengono elencati automaticamente.
+- 🕵️ **Anonimizzazione PII (opzionale)** — rileva e maschera dati personali (nomi, e-mail, codici fiscali…) in **locale**, tramite il servizio **Anonimal** ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)). Output *tipizzato* (`<PRIVATE_PERSON>`) o *anonimo* (`<<ANOM_DATA>>`).
+- 🌍 **7 lingue dell’interfaccia** — English, Español, Français, Português, Italiano, 中文, 日本語 (rilevate automaticamente, modificabili).
+- 👑😇👤 **Tre livelli di accesso** — DIOS / ANGEL / HUMANO, ognuno con la propria password e i propri limiti.
+- 🔒 **Privato per progettazione** — i file caricati vengono eliminati subito dopo la conversione; nulla viene memorizzato.
+- 🛡️ **Rinforzato** — anti‑SSRF, sanificazione XSS, limite di richieste per ruolo, container senza root, header di sicurezza.
+- 🐳 **Un’unica immagine autosufficiente** — ffmpeg, OCR, Whisper e Redis inclusi. Nessun servizio aggiuntivo.
+
+---
+
+## 🚀 Avvio rapido
+
+Scarica l’immagine già pronta ed eseguila con un solo comando:
+
+```bash
+docker run -d --name escriba --restart unless-stopped -p 8000:8000 \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e GOD_PASSWORD="cambiami" \
+  ghcr.io/diegoparras/escriba:latest
+```
+
+Apri **http://localhost:8000** e accedi con la `GOD_PASSWORD` che hai impostato.
+
+> L’immagine include tutto (ffmpeg, Tesseract OCR, Whisper, Redis integrato). Nessun servizio aggiuntivo necessario.
+
+---
+
+## 🛳️ Distribuzione
+
+Scegli la tua piattaforma. Tutto funziona a partire dall’immagine qui sopra.
+
+> Prima di iniziare, copia `.env.example` in `.env` e imposta i tuoi segreti
+> (`SECRET_KEY`, `GOD_PASSWORD`, …). Genera chiavi con `openssl rand -hex 32`.
+
+<details open>
+<summary><b>EasyPanel</b></summary>
+
+1. **Project → + Service → App**, poi in **Source → Docker Image** metti `ghcr.io/diegoparras/escriba:latest`.
+2. Aggiungi le tue **variabili d’ambiente** (vedi [Configurazione](#-configurazione)).
+3. In **Domains**, imposta **Container Port `8000`**, aggiungi il dominio e attiva HTTPS.
+4. **Deploy.**
+</details>
+
+<details>
+<summary><b>Docker Compose</b></summary>
+
+```bash
+git clone https://github.com/diegoparras/escriba.git
+cd escriba
+cp .env.example .env          # imposta i tuoi segreti
+docker compose up -d --build
+```
+</details>
+
+<details>
+<summary><b>Portainer</b></summary>
+
+**Stacks → Add stack → Repository** con
+`https://github.com/diegoparras/escriba` e percorso compose `docker-compose.yml`
+(oppure incolla il `docker-compose.yml` nell’editor web). Imposta le variabili
+d’ambiente e distribuisci; l’app è in ascolto sulla porta `8000`.
+</details>
+
+<details>
+<summary><b>Dokploy</b></summary>
+
+**Create Application → GitHub** (repo `diegoparras/escriba`) con **Build Type:
+Dockerfile**, aggiungi le variabili d’ambiente, imposta il dominio su **Container
+Port `8000`** con HTTPS, e distribuisci.
+</details>
+
+<details>
+<summary><b>Docker semplice / reverse proxy</b></summary>
+
+```bash
+docker build -t escriba .
+docker run -d --name escriba --restart unless-stopped -p 8000:8000 \
+  -e SECRET_KEY="$(openssl rand -hex 32)" -e GOD_PASSWORD="cambiami" escriba
+```
+
+Per il TLS, metti un reverse proxy davanti. Esempio di `Caddyfile` (HTTPS automatico):
+
+```caddy
+esempio.com {
+    reverse_proxy localhost:8000
+}
+```
+
+Con Nginx, inoltra a `localhost:8000` e aumenta `client_max_body_size` per i caricamenti grandi.
+</details>
+
+---
+
+## ⚙️ Configurazione
+
+Tutte le impostazioni sono variabili d’ambiente. Minimo consigliato:
+
+```env
+SECRET_KEY=<openssl rand -hex 32>   # obbligatoria in produzione (altrimenti le sessioni si reimpostano)
+GOD_PASSWORD=<una password forte>
+ANGEL_PASSWORD=<opzionale>
+HUMAN_PASSWORD=<opzionale>
+```
+
+Se non viene impostata alcuna password, all’avvio viene generata una `GOD_PASSWORD`
+casuale e stampata nei **log** del container.
+
+| Variabile | Predefinito | Descrizione |
+|---|---|---|
+| `SECRET_KEY` | *(casuale)* | Chiave di firma delle sessioni. **Impostala** in produzione. |
+| `GOD_PASSWORD` / `ANGEL_PASSWORD` / `HUMAN_PASSWORD` | — | Password di ciascun livello di accesso. |
+| `HUMAN_OPEN` | `false` | Consente il livello HUMANO senza login (convertitore pubblico). |
+| `WEB_CONCURRENCY` | `auto` | Worker paralleli. `auto` = numero di core CPU. |
+| `MAX_UPLOAD_MB` | `100` | Limite assoluto di caricamento (eccetto DIOS). |
+| `WHISPER_MODEL` | `base` | Modello di trascrizione: `tiny` · `base` · `small` · `medium` · `large-v3`. |
+| `MAX_MEDIA_MINUTES` | `120` | Durata max audio/video da trascrivere (`0` = illimitato; DIOS senza limite). |
+| `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `GOOGLE_API_KEY` | — | Chiavi IA lato server (usate se l’utente non fornisce la propria). Solo DIOS e ANGEL. |
+| `API_TOKEN` / `API_TOKEN_ROLE` | — / `angel` | Token statico per l’automazione (n8n, script) e il ruolo associato. |
+| `EMBEDDED_REDIS` | `true` | Redis integrato per il limite di richieste condiviso. `false` + `REDIS_URL` per uno esterno. |
+| `ENABLE_DOCS` | `false` | Esporre Swagger su `/api/docs`. |
+| `PORT` | `8000` | Porta del container. |
+
+I limiti per livello (`*_MAX_MB`, `*_MAX_BATCH`, `*_RATE`) e i preset sono documentati in
+[`.env.example`](../../.env.example).
+
+**Prestazioni:** per impostazione predefinita l’app avvia un worker per core CPU, quindi si
+adatta a qualsiasi host (VPS 1 core → 1 worker; server 24 thread → 24). Ogni worker usa
+~250 MB di RAM; imposta `WEB_CONCURRENCY` a un numero fisso per limitarlo.
+
+---
+
+## 🔐 Ruoli e livelli di accesso
+
+Il login è obbligatorio. Ogni livello ha la propria password e i propri limiti.
+
+| Capacità | 👤 HUMANO | 😇 ANGEL | 👑 DIOS |
+|---|:---:|:---:|:---:|
+| Caricare e convertire file | ✓ | ✓ | ✓ |
+| Convertire da un URL pubblico | — | ✓ (anti‑SSRF) | ✓ |
+| URL interno / `file://` / percorso locale | — | — | ✓ |
+| Audio / video / ZIP | — | ✓ | ✓ |
+| Trascrizioni di YouTube | ✓ | ✓ | ✓ |
+| OCR (forzato / automatico) | — | ✓ | ✓ |
+| Usare le chiavi IA del server | — | ✓ | ✓ |
+| Dimensione max file | 25 MB | 100 MB | illimitata |
+| File per lotto | 3 | 10 | illimitati |
+| Statistiche server (CPU/RAM) | — | parziale | completo |
+| Limite richieste (req/min) | 15 | 60 | illimitato |
+
+Tutti i limiti sono configurabili tramite variabili d’ambiente.
+
+**Punti di sicurezza:** l’accesso ai file locali e l’SSRF sono riservati a DIOS;
+il recupero degli URL blocca gli IP interni e i reindirizzamenti; i caricamenti sono limitati
+in streaming; l’anteprima è sanificata con DOMPurify; vengono applicati CSP e header di sicurezza;
+il container gira come utente non‑root con `no-new-privileges`; il limite di richieste è
+condiviso tra i worker tramite il Redis integrato.
+
+---
+
+## 🔌 API
+
+Utile per l’automazione (n8n, script). Richiede autenticazione.
+
+**Con un token API** (imposta `API_TOKEN`):
+
+```bash
+curl -H "X-API-Key: IL_TUO_TOKEN" \
+     -F "file=@documento.pdf" \
+     https://il-tuo-dominio/api/convert
+# Forzare OCR / lingua:  -F "ocr=true"  -F "lang=it-IT"
+```
+
+**Con un cookie di sessione:**
+
+```bash
+curl -c cookies.txt -F "password=$GOD_PASSWORD" https://il-tuo-dominio/api/login
+curl -b cookies.txt -F "file=@documento.pdf"    https://il-tuo-dominio/api/convert
+```
+
+`POST /api/convert` (multipart/form-data): `file` *o* `url`, più gli opzionali `lang`,
+`ocr`, `llm_provider`, `llm_api_key`, `llm_model`. Risposta:
+
+```json
+{ "source": "…", "title": "…", "markdown": "…",
+  "words": 1234, "chars": 5678, "elapsed_ms": 87,
+  "pdf_type": "scansionato", "ocr_applied": true, "note": null }
+```
+
+---
+
+## 🌍 Internazionalizzazione
+
+L’interfaccia è disponibile in **7 lingue** — English, Español, Français, Português,
+Italiano, 中文 e 日本語. La lingua viene rilevata automaticamente dal browser e può essere
+cambiata in qualsiasi momento dal pannello ⚙️; la scelta viene ricordata per browser.
+
+---
+
+## 💻 Sviluppo locale
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+> OCR e trascrizione richiedono `ffmpeg`, `tesseract-ocr` e `ocrmypdf` installati nel
+> sistema (l’immagine Docker li include già). Gli altri formati funzionano senza di essi.
+
+---
+
+## 📜 Crediti e licenza
+
+**Escriba** — sviluppato da **Diego Parrás**
+CeMIACE · SEUBES · FCE‑UBA (Facultad de Ciencias Económicas, Universidad de Buenos Aires).
+
+Costruito su [Microsoft MarkItDown](https://github.com/microsoft/markitdown),
+[FastAPI](https://fastapi.tiangolo.com/),
+[Tesseract OCR](https://github.com/tesseract-ocr/tesseract),
+[OCRmyPDF](https://github.com/ocrmypdf/OCRmyPDF) e
+[faster‑whisper](https://github.com/SYSTRAN/faster-whisper).
+Sotto [Licenza MIT](../../LICENSE).

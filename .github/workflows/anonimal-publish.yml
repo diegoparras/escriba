@@ -1,0 +1,78 @@
+name: Publicar imagen Anonimal (GHCR)
+
+# Construye y publica ghcr.io/<owner>/anonimal cuando cambia algo en anonimal/.
+# Hornea el checkpoint de OPF (~2,8 GB) en la imagen, así que el build es lento;
+# por eso se dispara SOLO cuando cambian los archivos del servicio (paths) y se
+# cachea agresivamente (type=gha) para que rebuilds de código sean rápidos.
+
+on:
+  push:
+    branches: [main]
+    tags: ["anonimal-v*"]
+    paths:
+      - "anonimal/**"
+      - "!anonimal/**.md"   # cambios de docs no rebuildan la imagen pesada
+      - ".github/workflows/anonimal-publish.yml"
+  workflow_dispatch: {}
+
+# El build descarga el modelo de HuggingFace; lo serializamos para no chocar 429.
+concurrency:
+  group: ghcr-anonimal
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # El checkpoint de OPF (~2,8 GB) + torch hacen una imagen de ~7-8 GB. El
+      # runner de GitHub trae poco disco libre → liberamos espacio antes (saca
+      # toolchains preinstalados: .NET, Android, GHC, etc., ~30 GB).
+      - name: Liberar espacio en disco
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login en GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata (tags y labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/anonimal
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,format=short
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./anonimal
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=anonimal
+          cache-to: type=gha,mode=max,scope=anonimal

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.demoenv/
+.docenv/
+.env
+.DS_Store
+/demo_build/

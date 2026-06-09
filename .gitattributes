@@ -1,0 +1,12 @@
+# Los scripts de shell SIEMPRE con saltos de línea LF (si no, fallan en Linux).
+*.sh text eol=lf
+entrypoint.sh text eol=lf
+
+# Archivos binarios: nunca normalizar saltos de línea (evita corrupción en Windows).
+*.pdf binary
+*.gif binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.webm binary

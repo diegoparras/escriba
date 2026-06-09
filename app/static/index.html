@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Escriba · Transcribí cualquier documento a Markdown</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#fdf7f3" />
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter/index.css" />
+<style>
+  /* Design system — neutro frío y afilado (estilo Linear/Vercel), acento coral de marca */
+  :root {
+    --bg: #0a0a0c; --bg-2: #101014; --panel: #141418;
+    --card: rgba(255,255,255,0.04); --card-2: rgba(255,255,255,0.022);
+    --border: rgba(255,255,255,0.10); --hairline: rgba(255,255,255,0.16);
+    --text: #ededf0; --muted: #8b8b96; --muted-2: #bdbdc7;
+    --blue: #ef8b66; --blue-press: #e3754d;
+    --accent: #ef8b66; --accent-2: #e3754d;
+    --on-accent: #1a1208;
+    --ok: #3fb950; --warn: #d6a01a; --err: #f85149;
+    --radius: 12px; --radius-lg: 16px;
+    --ring: 0 0 0 3px rgba(239,139,102,.26);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+  [data-theme="light"] {
+    --bg: #fafafb; --bg-2: #ffffff; --panel: #ffffff;
+    --card: rgba(15,15,20,0.028); --card-2: rgba(15,15,20,0.016);
+    --border: rgba(15,15,20,0.10); --hairline: rgba(15,15,20,0.17);
+    --text: #16161a; --muted: #70707b; --muted-2: #3c3c44;
+    --blue: #e06a3a; --blue-press: #cf5a2c; --accent: #e06a3a; --accent-2: #d2764f;
+    --on-accent: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+    --ring: 0 0 0 3px rgba(224,106,58,.18);
+    --shadow: 0 1px 2px rgba(15,15,20,.04), 0 12px 32px -16px rgba(15,15,20,.16);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Inter Variable","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color: var(--text); background: var(--bg);
+    min-height: 100%; transition: background .4s, color .4s;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    letter-spacing: -.011em;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 22px clamp(20px, 6vw, 84px) 100px; }
+
+  /* Topbar */
+  .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; flex-wrap: nowrap; }
+  .logo { display: inline-flex; align-items: center; gap: 11px; font-weight: 600; font-size: 19px; letter-spacing: -.02em; flex-shrink: 0; }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .logo .dot { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--blue), var(--accent-2)); display: grid; place-items: center; color: var(--on-accent); font-size: 16px; }
+  .logomark { width: 30px; height: 30px; border-radius: 8px; display: block; }
+  .spacer { flex: 1; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); }
+  .role-ico { width: 13px; height: 13px; flex-shrink: 0; }
+  .badge.dios { background: rgba(240,169,140,.16); color: #f0a98c; border-color: rgba(240,169,140,.35); }
+  .badge.angel { background: rgba(127,178,240,.14); color: #7fb2f0; border-color: rgba(127,178,240,.32); }
+  .badge.humano { background: rgba(150,150,150,.14); color: var(--muted-2); }
+  .stats { display: flex; gap: 6px; flex-wrap: nowrap; flex-shrink: 1; min-width: 0; overflow: hidden; }
+  .stat { display: flex; flex-direction: column; gap: 3px; min-width: 66px; flex-shrink: 0; background: var(--card); border: 1px solid var(--border); border-radius: 13px; padding: 7px 10px; }
+  .stat .k { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .stat .v { font-size: 15px; font-weight: 600; }
+  .bar { height: 4px; border-radius: 99px; background: rgba(128,128,128,.22); overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 99px; background: var(--blue); transition: width .5s; }
+  .icon-btn { width: 38px; height: 38px; border-radius: 11px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 15px; transition: background .2s; }
+  .icon-btn:hover { background: var(--card-2); border-color: var(--hairline); }
+  .menu-wrap { position: relative; }
+  .menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 210px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; z-index: 45; display: flex; flex-direction: column; gap: 1px; animation: pop .14s cubic-bezier(.2,.8,.2,1); }
+  .menu-item { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font-size: 14px; padding: 9px 11px; border-radius: 8px; cursor: pointer; transition: background .12s; }
+  .menu-item:hover { background: var(--card); }
+  .menu-item > span:first-child { width: 18px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--muted-2); transition: color .12s; }
+  .menu-item:hover > span:first-child { color: var(--text); }
+  .mi-ico { width: 17px; height: 17px; }
+  .menu-item.danger:hover { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+  .menu-item.danger:hover > span:first-child { color: var(--err); }
+  .menu-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+  /* Chip de recursos (colapsado) + popover */
+  .status-chip { display: inline-flex; align-items: center; gap: 12px; height: 38px; padding: 0 13px; border-radius: 11px; border: 1px solid var(--border); background: var(--card); color: var(--muted-2); cursor: pointer; transition: background .15s, border-color .15s; }
+  .status-chip:hover { background: var(--card-2); border-color: var(--hairline); }
+  .res { display: inline-flex; align-items: center; gap: 6px; }
+  .micon { width: 14px; height: 14px; opacity: .82; }
+  .menu-head { padding: 2px 7px 4px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); transition: background .3s, box-shadow .3s; }
+  .status-dot.warn { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
+  .status-dot.crit { background: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 22%, transparent); }
+  .stats-pop { min-width: 250px; padding: 13px; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+  .stats-grid .stat { min-width: 0; }
+  .stat .v { font-variant-numeric: tabular-nums; }
+  .stat .k { display: inline-flex; align-items: center; gap: 4px; }
+  .stat .k .micon { width: 11px; height: 11px; opacity: .75; }
+
+  header.hero { text-align: center; margin: 14px 0 34px; }
+  h1 { font-size: clamp(34px, 6vw, 64px); line-height: 1.05; margin: 6px 0 14px; font-weight: 600; letter-spacing: -.03em; }
+  .sub { color: var(--muted); font-size: clamp(17px,2.2vw,21px); max-width: 640px; margin: 0 auto; line-height: 1.4; font-weight: 400; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow); }
+
+  /* --- Drop zone estilo Apple --- */
+  .drop { position: relative; border: 1.5px dashed var(--hairline); border-radius: var(--radius); padding: 60px 28px 52px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; background: transparent; }
+  .drop:hover { border-color: var(--accent); background: var(--card-2); }
+  .drop.drag { border-color: var(--accent); background: var(--card); }
+  .up-tile { width: 76px; height: 76px; margin: 0 auto 22px; border-radius: 20px; display: grid; place-items: center;
+    background: var(--card); border: 1px solid var(--border);
+    transition: border-color .2s, background .2s, transform .2s, box-shadow .2s; }
+  .drop:hover .up-tile, .drop.drag .up-tile { border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card)); transform: translateY(-2px);
+    box-shadow: 0 14px 34px -16px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .drop .up-ico { color: var(--muted-2); transition: color .2s; }
+  .drop:hover .up-ico, .drop.drag .up-ico { color: var(--accent); }
+  .drop .big { font-size: 26px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 6px; }
+  .drop .small { color: var(--muted); font-size: 15px; margin: 0 0 22px; }
+  .drop .types { color: var(--muted); font-size: 13px; margin-top: 22px; }
+  .drop .types .kbd { font-size: 11px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px; }
+  .btn-pill { border: 0; cursor: pointer; border-radius: 999px; padding: 12px 26px; font-size: 15px; font-weight: 600; color: var(--on-accent); background: var(--blue); transition: background .2s, transform .08s; }
+  .btn-pill:hover { background: var(--blue-press); }
+  .btn-pill:active { transform: scale(.97); }
+
+  .formats { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 18px; }
+  .pill { font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+    color: var(--c, var(--muted));
+    background: color-mix(in srgb, var(--c, var(--card)) 13%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c, var(--hairline)) 30%, transparent);
+    border-radius: 999px; padding: 4px 11px; transition: transform .12s, box-shadow .15s; }
+  .pill:hover { transform: translateY(-1px); box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--c, transparent) 50%, transparent); }
+
+  /* Controles secundarios */
+  .controls { padding: 16px 12px 6px; }
+  .or { display: flex; align-items: center; gap: 16px; color: var(--text); margin: 20px 2px 14px; font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .url-help { font-size: 12.5px; color: var(--muted); margin-top: 9px; text-align: center; }
+  .options-row { display: flex; justify-content: center; margin: 18px 0 4px; }
+  .options-btn { display: inline-flex; align-items: center; gap: 9px; font-weight: 550; transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; }
+  .options-btn .link-ico { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
+  .btn.ghost.options-btn:hover { background: color-mix(in srgb, var(--accent) 9%, var(--card)); border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); color: var(--text); transform: translateY(-1px); box-shadow: 0 4px 14px -8px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .row { display: flex; gap: 10px; }
+  .row.wrap { flex-wrap: wrap; }
+  textarea, input[type="text"], input[type="password"], input[type="url"], select { width: 100%; background: var(--card-2); border: 1px solid var(--border); color: var(--text); border-radius: 9px; padding: 10px 13px; font-size: 14.5px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: var(--ring); }
+  select { cursor: pointer; }
+  /* Campo de URL diferenciado: crema coral (8% del acento de marca) */
+  #urlInput { background: color-mix(in srgb, var(--accent) 8%, var(--card-2));
+    border-color: color-mix(in srgb, var(--accent) 22%, var(--border)); }
+  #urlInput:focus { border-color: var(--accent); }
+  /* Ícono de ajustes (abre opciones) junto al campo de URL */
+  .opt-icon { width: 40px; height: 40px; flex-shrink: 0; align-self: center; display: grid; place-items: center; }
+  .opt-icon svg { width: 17px; height: 17px; color: var(--accent); }
+  .opt-icon:hover { border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
+
+  .btn { border: 1px solid transparent; cursor: pointer; border-radius: 9px; padding: 10px 18px; font-size: 14px; font-weight: 550; color: var(--on-accent); white-space: nowrap; background: var(--accent); transition: background .15s, transform .06s, box-shadow .15s, border-color .15s; }
+  .btn:hover { background: var(--blue-press); }
+  .btn:active { transform: scale(.985); }
+  .btn:focus-visible { box-shadow: var(--ring); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.ghost { background: var(--card); border-color: var(--border); color: var(--text); }
+  .btn.ghost:hover { background: var(--card-2); border-color: var(--hairline); }
+  .btn.sm { padding: 7px 13px; font-size: 13px; }
+  .btn.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
+  .btn.ok:hover { background: color-mix(in srgb, var(--ok) 22%, transparent); }
+  .btn.danger { background: color-mix(in srgb, var(--err) 13%, transparent); color: var(--err); border-color: color-mix(in srgb, var(--err) 30%, transparent); }
+  .btn.danger:hover { background: color-mix(in srgb, var(--err) 20%, transparent); }
+  .btn.info { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
+  .btn.info:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  /* Ghost que se tiñe al interactuar: verdecito/verde y rosita/rojo */
+  .btn.ghost.hl-ok:hover { background: color-mix(in srgb, var(--ok) 14%, transparent); border-color: color-mix(in srgb, var(--ok) 34%, transparent); color: var(--ok); }
+  .btn.ghost.hl-ok:active { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .btn.ghost.hl-danger:hover { background: color-mix(in srgb, var(--err) 13%, transparent); border-color: color-mix(in srgb, var(--err) 32%, transparent); color: var(--err); }
+  .btn.ghost.hl-danger:active { background: var(--err); border-color: var(--err); color: #fff; }
+
+  details.adv { margin-top: 6px; padding: 0 12px; }
+  details.adv summary { cursor: pointer; color: var(--muted); font-size: 14px; user-select: none; list-style: none; display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+  details.adv summary::-webkit-details-marker { display: none; }
+  .adv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .adv-note { font-size: 12.5px; color: var(--muted); }
+  .adv-note b { color: var(--ok); }
+
+  .actions { display: flex; gap: 12px; margin-top: 14px; padding: 0 12px; flex-wrap: wrap; }
+  .actions .btn.grow { flex: 1; }
+  .limits { margin: 14px 12px 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .lim-label { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+  .lim-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--muted-2);
+    background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; }
+  .lim-chip .lim-ico { width: 13px; height: 13px; color: var(--muted); flex-shrink: 0; }
+  .lim-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 32%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .lim-chip.warn .lim-ico { color: var(--warn); }
+  /* Color de los chips de nivel según el rol */
+  .limits.dios { --rc: var(--accent); }
+  .limits.angel { --rc: #4a8fe0; }
+  .limits.humano { --rc: #1f9d57; }
+  .limits .lim-chip:not(.warn) { color: color-mix(in srgb, var(--rc, var(--muted-2)) 88%, var(--text));
+    background: color-mix(in srgb, var(--rc, var(--muted-2)) 12%, transparent);
+    border-color: color-mix(in srgb, var(--rc, var(--muted-2)) 30%, transparent); }
+  .limits .lim-chip:not(.warn) .lim-ico { color: var(--rc, var(--muted)); }
+
+  /* Barra de acción fija (aparece solo con archivos en cola) */
+  .actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(1.4) blur(14px);
+    border-top: 1px solid var(--border);
+    transform: translateY(130%); transition: transform .3s cubic-bezier(.2,.8,.2,1); }
+  .has-files .actionbar { transform: translateY(0); }
+  .actionbar-inner { max-width: 940px; margin: 0 auto; padding: 11px clamp(20px, 6vw, 84px);
+    display: flex; align-items: center; gap: 14px; }
+  .ab-count { font-size: 13px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  .ab-actions { margin-left: auto; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+  .ab-actions .btn { padding: 9px 18px; }
+
+  /* Cola */
+  .queue { margin-top: 26px; display: flex; flex-direction: column; gap: 12px; }
+  .qhead { display: flex; align-items: center; gap: 12px; }
+  .qhead h3 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .selall { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+  input[type="checkbox"] { accent-color: var(--blue); }
+  .sel { width: 17px; height: 17px; cursor: pointer; flex-shrink: 0; }
+  .item { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: border-color .15s; }
+  .item:hover { border-color: var(--hairline); box-shadow: 0 6px 22px -14px rgba(0,0,0,.45); }
+  .item-top { display: flex; align-items: center; gap: 13px; padding: 14px 16px; cursor: pointer; }
+  .item .ico { font-size: 22px; }
+  .item .meta { min-width: 0; flex: 1; }
+  .item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.01em; }
+  .item .small { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 5px 11px 5px 9px; border-radius: 999px; white-space: nowrap; }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .chip.queued { background: rgba(134,134,139,.16); color: var(--muted); }
+  .chip.converting { background: rgba(255,214,10,.14); color: var(--warn); }
+  .chip.done { background: rgba(48,209,88,.14); color: var(--ok); }
+  .chip.error { background: rgba(255,69,58,.14); color: var(--err); }
+  .item .x { cursor: pointer; color: var(--muted); padding: 4px; font-size: 15px; }
+  .item .x:hover { color: var(--err); }
+  /* barra de progreso por archivo */
+  .pbar { height: 5px; background: rgba(128,128,128,.2); border-radius: 99px; overflow: hidden; margin: 0 17px 14px; }
+  .pbar > span { display: block; height: 100%; width: 0%; border-radius: 99px; background: linear-gradient(90deg, var(--blue), var(--accent-2)); transition: width .3s ease; }
+  .item-body { display: none; border-top: 1px solid var(--border); padding: 15px 17px; }
+  .item.open .item-body { display: block; }
+  .resbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 6px; }
+  .tab { font-size: 13px; padding: 7px 13px; border-radius: 10px; cursor: pointer; color: var(--muted); border: 1px solid transparent; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); background: var(--card); border-color: var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .view { display: grid; gap: 12px; }
+  .view.split { grid-template-columns: 1fr 1fr; }
+  pre.raw { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; background: var(--card-2); border: 1px solid var(--border); border-radius: 13px; padding: 14px; max-height: 56vh; overflow: auto; font-family: "SF Mono","JetBrains Mono",Menlo,Consolas,monospace; }
+  .preview { background: var(--card-2); border: 1px solid var(--border); border-radius: 13px; padding: 6px 18px; max-height: 56vh; overflow: auto; }
+  .preview img { max-width: 100%; } .preview pre { border-radius: 8px; overflow: auto; }
+  .preview table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+  .preview thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  .preview th, .preview td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  .preview tbody tr:nth-child(even) { background: rgba(128,128,128,.05); }
+  .hidden { display: none !important; }
+
+  .toasts { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 50; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--blue); border-radius: 13px; padding: 12px 16px; font-size: 14px; box-shadow: 0 18px 50px -16px rgba(0,0,0,.6); animation: slidein .25s; max-width: 320px; }
+  .toast.ok { border-left-color: var(--ok); } .toast.err { border-left-color: var(--err); }
+  @keyframes slidein { from { transform: translateY(14px); opacity: 0; } }
+  .spinner { display: inline-block; width: 13px; height: 13px; vertical-align: -2px; border: 2px solid rgba(128,128,128,.35); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Login */
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(20,12,8,.55); backdrop-filter: blur(16px); z-index: 60; }
+  .login-card { width: min(412px, 94vw); background: var(--panel); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 40px 100px -30px rgba(0,0,0,.45); animation: pop .25s cubic-bezier(.2,.8,.2,1); }
+  .login-brand { padding: 32px 30px 8px; text-align: center; color: var(--text); }
+  .login-logo { width: 58px; height: 58px; border-radius: 15px; display: block; margin: 0 auto 14px; box-shadow: 0 6px 18px -8px rgba(0,0,0,.22); }
+  .login-name { font-size: 24px; font-weight: 700; letter-spacing: -.02em; color: var(--text); }
+  .login-tag { font-size: 12.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
+  .login-form { padding: 22px 30px 24px; }
+  #loginPass:focus { border-color: var(--accent); box-shadow: none;
+    background: color-mix(in srgb, var(--accent) 9%, var(--card-2)); }
+  .pass-wrap { position: relative; }
+  .pass-wrap input { padding-right: 44px; }
+  .pass-toggle { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); width: 32px; height: 32px;
+    display: grid; place-items: center; background: none; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer; transition: color .15s, background .15s; }
+  .pass-toggle:hover { color: var(--text); background: var(--card); }
+  .pass-toggle svg { width: 18px; height: 18px; }
+  .login-form h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  .login-form p { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+  .login-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .roles-hint { display: flex; gap: 8px; margin-top: 18px; justify-content: center; }
+  .login-foot { text-align: center; color: var(--muted); font-size: 11.5px; margin-top: 16px; }
+
+  /* Header sticky con blur */
+  .topbar { position: sticky; top: 0; z-index: 30; padding: 12px 0; margin: 0 0 22px;
+    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(1.4) blur(14px);
+    border-bottom: 1px solid transparent; transition: border-color .3s; }
+  .topbar.scrolled { border-bottom-color: var(--border); }
+
+  /* Hero adaptativo (se achica cuando hay archivos) */
+  .has-files header.hero { margin: 0 0 18px; }
+  .has-files header.hero h1 { font-size: clamp(22px, 3.5vw, 32px); margin: 0 0 6px; }
+  .has-files header.hero .sub { display: none; }
+
+  /* Link "ver formatos" */
+  .link-btn { background: none; border: 0; color: var(--muted); font-size: 13px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px; padding: 6px; transition: color .2s; }
+  .link-btn:hover { color: var(--accent); }
+  .link-btn.icon-link { display: inline-flex; align-items: center; gap: 7px; text-decoration: none; }
+  .link-btn.icon-link span { text-decoration: underline; text-underline-offset: 3px; }
+  .link-ico { width: 15px; height: 15px; flex-shrink: 0; }
+
+  /* Chip de tipo de archivo (reemplaza emojis) */
+  .ftype { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 11px;
+    color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .03em; flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+
+  /* Modales genéricos */
+  .modal-backdrop { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 20px;
+    background: rgba(0,0,0,.5); backdrop-filter: blur(8px); animation: fade .2s; }
+  @keyframes fade { from { opacity: 0; } }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; width: min(560px, 96vw);
+    max-height: 86vh; overflow: auto; padding: 24px 26px; box-shadow: 0 40px 100px -30px rgba(0,0,0,.7);
+    animation: pop .22s cubic-bezier(.2,.8,.2,1); }
+  .modal.lg { width: min(1000px, 96vw); }
+  @keyframes pop { from { transform: translateY(12px) scale(.98); opacity: 0; } }
+  .modal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .modal-head h3 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .modal-close { margin-left: auto; cursor: pointer; color: var(--muted); border: 1px solid var(--border);
+    background: var(--card); width: 32px; height: 32px; border-radius: 9px; font-size: 15px; }
+  .modal-close:hover { color: var(--err); }
+  .settings-tabs { margin: 2px 0 18px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .settings-tabs .tab { font-weight: 600; }
+  .settings-tabs .tab.active { color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+    box-shadow: 0 2px 8px -4px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .stab-panel { min-height: 96px; }
+  .fmt-group { margin: 14px 0; }
+  .fmt-group h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .fmt-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .about-row { display: flex; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .about-row b { min-width: 90px; color: var(--muted); font-weight: 600; }
+
+  #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 48px; }
+  footer a { color: var(--blue); text-decoration: none; }
+  @media (max-width: 640px) { .adv-grid, .view.split { grid-template-columns: 1fr; } .stats { display: none; } .drop { padding: 44px 18px; } }
+</style>
+</head>
+<body>
+<canvas id="confetti"></canvas>
+
+<div class="overlay hidden" id="overlay">
+  <div class="login-card">
+    <div class="login-brand">
+      <img class="login-logo" src="/static/logo.svg" alt="Escriba" />
+      <div class="login-name">Escriba</div>
+      <div class="login-tag" data-i18n="brand.tagline">Transcribí cualquier documento a Markdown</div>
+    </div>
+    <div class="login-form">
+      <h2 data-i18n="login.welcome">Bienvenido</h2>
+      <p data-i18n="login.sub">Ingresá la contraseña de tu nivel de acceso.</p>
+      <label class="login-label" for="loginPass" data-i18n="login.passLabel">Contraseña</label>
+      <div class="pass-wrap">
+        <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" />
+        <button type="button" class="pass-toggle" id="loginPassToggle" aria-label="Mostrar u ocultar contraseña"></button>
+      </div>
+      <button id="loginBtn" class="btn" style="width:100%;margin-top:14px" data-i18n="login.enter">Entrar →</button>
+      <div class="roles-hint">
+        <span class="badge dios"><svg class="role-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17 4 7 8.5 11 12 6 15.5 11 20 7 19 17Z"/><path d="M5.4 20.2h13.2"/></svg><span>DIOS</span></span>
+        <span class="badge angel"><svg class="role-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="4" rx="3" ry="1.1"/><path d="M12 7.5v8.5"/><path d="M12 9.5C10 7 7 6.4 4.4 7.2c0 3.3 2.1 6.1 5.1 6.8"/><path d="M12 9.5c2-2.5 5-3.1 7.6-2.3 0 3.3-2.1 6.1-5.1 6.8"/></svg><span>ANGEL</span></span>
+        <span class="badge humano"><svg class="role-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg><span>HUMANO</span></span>
+      </div>
+      <div class="login-foot">Diego Parrás · CeMIACE · SEUBES · FCE-UBA</div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap hidden" id="appWrap">
+  <div class="topbar">
+    <div class="logo"><img class="logomark" src="/static/logo.svg" alt="Escriba" /> Escriba</div>
+    <div class="spacer"></div>
+    <div class="menu-wrap hidden" id="stats">
+      <button class="status-chip" id="statsChip" data-i18n-title="nav.resources" title="Recursos del servidor" aria-haspopup="true">
+        <span class="res" title="CPU"><svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg><span class="status-dot" id="cpuDot"></span></span>
+        <span class="res" title="RAM"><svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="1.5"/><path d="M6 17v3M10 17v3M14 17v3M18 17v3"/></svg><span class="status-dot" id="ramDot"></span></span>
+      </button>
+      <div class="menu stats-pop hidden" id="statsPop" role="menu">
+        <div class="stats-grid">
+          <div class="stat"><span class="k"><svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>CPU</span><span class="v" id="stCpu">—</span><div class="bar"><span id="stCpuBar" style="width:0%"></span></div></div>
+          <div class="stat"><span class="k"><svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="1.5"/><path d="M6 17v3M10 17v3M14 17v3M18 17v3"/></svg>RAM</span><span class="v" id="stRam">—</span><div class="bar"><span id="stRamBar" style="width:0%"></span></div></div>
+          <div class="stat"><span class="k" data-i18n="nav.cores">Núcleos</span><span class="v" id="stCores">—</span></div>
+          <div class="stat"><span class="k" data-i18n="nav.converted">Convertidos</span><span class="v" id="stConv">—</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <div class="menu-wrap">
+        <button class="icon-btn" id="menuBtn" data-i18n-title="nav.menu" title="Menú" aria-haspopup="true" style="font-size:20px;line-height:1">⋯</button>
+        <div class="menu hidden" id="headerMenu" role="menu">
+          <div class="menu-head"><span class="badge" id="roleBadge"></span></div>
+          <div class="menu-sep"></div>
+          <button class="menu-item" id="themeBtn" role="menuitem"><span id="themeIcon"></span><span data-i18n="nav.theme">Cambiar tema</span></button>
+          <button class="menu-item" id="settingsBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span><span data-i18n="nav.settings">Configuración</span></button>
+          <button class="menu-item" id="aboutBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span><span data-i18n="nav.about">Acerca de</span></button>
+          <div class="menu-sep"></div>
+          <button class="menu-item danger" id="logoutBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></span><span data-i18n="nav.logout">Salir</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <header class="hero">
+    <h1 data-i18n="hero.title">Transcribí cualquier documento a Markdown.</h1>
+    <p class="sub" data-i18n="hero.sub">PDF, Word, Excel, PowerPoint, imágenes, audio y más. Rápido, en paralelo, y con tu privacidad intacta.</p>
+  </header>
+
+  <div class="panel">
+    <div id="drop" class="drop">
+      <div class="up-tile">
+        <svg class="up-ico" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+        </svg>
+      </div>
+      <div class="big" data-i18n="drop.title">Arrastrá tus archivos</div>
+      <div class="small" data-i18n="drop.sub">o seleccionalos desde tu equipo</div>
+      <button class="btn-pill" id="pickBtn" type="button" data-i18n="drop.pick">Seleccionar archivos</button>
+      <input id="fileInput" type="file" class="hidden" multiple />
+      <div class="types"><span data-i18n="drop.paste">Pegá también con</span> <span class="kbd">Ctrl</span>+<span class="kbd">V</span> &nbsp;·&nbsp; <button class="link-btn" id="formatsBtn" type="button" data-i18n="drop.formats">Ver formatos compatibles</button></div>
+    </div>
+
+    <div class="controls">
+      <div id="urlBlock">
+        <div class="or" data-i18n="url.or">o pegá una URL o enlace de YouTube</div>
+        <div class="row">
+          <input id="urlInput" type="url" data-i18n-ph="url.ph" placeholder="https://ejemplo.com/articulo · PDF online · o https://youtu.be/… (transcripción)" />
+          <button id="openOptionsBtn" class="icon-btn opt-icon" type="button" data-i18n-title="adv.open" title="Opciones de conversión, IA y anonimización"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
+          <button id="addUrlBtn" class="btn ghost hl-ok" data-i18n="url.add">Agregar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="limits" id="limits"></div>
+  </div>
+
+  <div class="queue" id="queue"></div>
+
+  <div class="actionbar" id="actionBar" aria-hidden="true">
+    <div class="actionbar-inner">
+      <span class="ab-count" id="abCount"></span>
+      <div class="ab-actions">
+        <button id="clearBtn" class="btn ghost hl-danger sm" data-i18n="act.clear">Limpiar</button>
+        <button id="zipBtn" class="btn ghost sm hidden" data-i18n="act.zip">Descargar todo (.zip)</button>
+        <button id="rehydrateBtn" class="btn ghost sm hidden" type="button" data-i18n="rehy.open">Re-hidratar respuesta del LLM</button>
+        <button id="convertBtn" class="btn" data-i18n="act.convertAll">Convertir todo</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <strong>Escriba</strong> · un desarrollo de Diego Parrás · CeMIACE · SEUBES · FCE-UBA<br>
+    con tecnología de <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener">Microsoft MarkItDown</a><br>
+    <span style="display:inline-flex;gap:14px;margin-top:8px">
+      <a href="https://github.com/diegoparras/escriba" target="_blank" rel="noopener">Código en GitHub</a>
+      <a href="https://github.com/diegoparras/escriba/pkgs/container/escriba" target="_blank" rel="noopener">🐳 Imagen Docker</a>
+    </span>
+  </footer>
+</div>
+
+<!-- Modal: formatos compatibles -->
+<div class="modal-backdrop hidden" id="formatsModal" data-close>
+  <div class="modal">
+    <div class="modal-head">
+      <h3 data-i18n="formats.title">Formatos compatibles</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <p class="adv-note" style="margin:0 0 4px" data-i18n="formats.desc">Subí cualquiera de estos tipos. La detección es automática.</p>
+    <div id="fmtBody"></div>
+  </div>
+</div>
+
+<!-- Modal: acerca de -->
+<div class="modal-backdrop hidden" id="aboutModal" data-close>
+  <div class="modal">
+    <div class="modal-head">
+      <div class="logo"><img class="logomark" src="/static/logo.svg" alt="Escriba" /> Escriba</div>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <p class="sub" style="font-size:15px;text-align:left;margin:0 0 16px" data-i18n="brand.tagline">Transcribí cualquier documento a Markdown.</p>
+    <div class="about-row"><b data-i18n="about.author">Autor</b><span>Diego Parrás</span></div>
+    <div class="about-row"><b data-i18n="about.institution">Institución</b><span>CeMIACE · SEUBES · FCE-UBA</span></div>
+    <div class="about-row"><b data-i18n="about.version">Versión</b><span id="aboutVer">—</span></div>
+    <div class="about-row"><b data-i18n="about.engine">Motor</b><span><a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener">Microsoft MarkItDown</a> + Tesseract OCR</span></div>
+    <div class="about-row"><b data-i18n="about.code">Código</b><span><a href="https://github.com/diegoparras/escriba" target="_blank" rel="noopener">github.com/diegoparras/escriba</a></span></div>
+  </div>
+</div>
+
+<!-- Modal: vista ampliada del resultado -->
+<div class="modal-backdrop hidden" id="resultModal" data-close>
+  <div class="modal lg">
+    <div class="modal-head">
+      <h3 id="rmTitle">Resultado</h3>
+      <button class="btn ghost sm" id="rmCopy" type="button">Copiar</button>
+      <button class="btn ghost sm" id="rmDl" type="button">.md</button>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <div class="preview" id="rmBody" style="max-height:74vh"></div>
+  </div>
+</div>
+
+<!-- Modal: configuración -->
+<div class="modal-backdrop hidden" id="settingsModal" data-close>
+  <div class="modal" style="width:min(580px,96vw)">
+    <div class="modal-head">
+      <h3 data-i18n="settings.title">Configuración</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <div class="tabs settings-tabs" id="settingsTabs">
+      <button class="tab active" type="button" data-stab="general" data-i18n="settings.tab.general">General</button>
+      <button class="tab" type="button" data-stab="conv" data-i18n="settings.tab.conv">Conversión</button>
+      <button class="tab" type="button" data-stab="ai" data-i18n="settings.tab.ai">IA</button>
+      <button class="tab" type="button" data-stab="anon" data-i18n="settings.tab.anon">Anonimización</button>
+      <button class="tab" type="button" data-stab="youtube" data-i18n="settings.tab.youtube">YouTube</button>
+    </div>
+
+    <div class="stab-panel" data-stab-panel="general">
+      <div class="field">
+        <label data-i18n="settings.language">Idioma de la interfaz</label>
+        <select id="langSelect"></select>
+      </div>
+    </div>
+
+    <div class="stab-panel hidden" data-stab-panel="conv">
+      <div class="field">
+        <label data-i18n="adv.docLang">Idioma del documento (mejora transcripción de audio)</label>
+        <select id="lang">
+          <option value="auto" data-i18n="dl.auto">Detección automática</option>
+          <option value="es-ES" data-i18n="dl.es">Español</option>
+          <option value="en-US" data-i18n="dl.en">Inglés</option>
+          <option value="pt-BR" data-i18n="dl.pt">Portugués</option>
+          <option value="fr-FR" data-i18n="dl.fr">Francés</option>
+          <option value="it-IT" data-i18n="dl.it">Italiano</option>
+          <option value="de-DE" data-i18n="dl.de">Alemán</option>
+        </select>
+      </div>
+      <div class="field" id="ocrField" style="margin-top:16px">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0">
+          <input id="ocrChk" type="checkbox" style="width:auto" />
+          <span data-i18n="ocr.label">Forzar OCR (PDFs escaneados o con acentos rotos tipo LaTeX) — usa el idioma elegido. Más lento.</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="stab-panel hidden" data-stab-panel="ai">
+      <div class="field">
+        <label data-i18n="ai.provider">Proveedor de IA</label>
+        <select id="provider">
+          <option value="none" data-i18n="prov.none">Sin IA (solo texto / OCR local)</option>
+          <option value="auto" data-i18n="prov.auto">Automático (según la key)</option>
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Google Gemini (AI Studio)</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="custom" data-i18n="prov.custom">Personalizado (Base URL)</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top:16px">
+        <label data-i18n="ai.keyLabel">API Key (OpenAI sk-… o Gemini AIza…)</label>
+        <input id="apiKey" type="password" data-i18n-ph="ai.keyPh" placeholder="sk-…  ·  AIza…  (no se guarda)" autocomplete="off" />
+      </div>
+      <div class="field" style="margin-top:16px">
+        <label data-i18n="ai.model">Modelo</label>
+        <div class="row">
+          <select id="model"><option value="" data-i18n="ai.modelPh">— escribí tu API key y "Traer modelos" —</option></select>
+          <button id="fetchModelsBtn" class="btn ghost" type="button" style="white-space:nowrap" data-i18n="ai.fetch">↻ Traer modelos</button>
+        </div>
+      </div>
+      <div class="field hidden" id="baseUrlField" style="margin-top:16px"><label data-i18n="ai.baseUrl">Base URL (endpoint compatible OpenAI)</label><input id="baseUrl" type="text" placeholder="https://api.openai.com/v1" /></div>
+      <div class="field" style="margin-top:16px">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0">
+          <input id="rememberKey" type="checkbox" style="width:auto" />
+          <span data-i18n="ai.remember">Recordar mis API keys por proveedor en este navegador (se guardan solo en tu equipo)</span>
+        </label>
+      </div>
+      <p class="adv-note" style="margin-top:10px" data-i18n-html="ai.note">La API key viaja solo en cada petición y <b>no se almacena</b> en el servidor. Soporta OpenAI, Google Gemini (AI Studio) y OpenRouter.</p>
+    </div>
+
+    <div class="stab-panel hidden" data-stab-panel="anon">
+      <div class="field hidden" id="anonField">
+        <label data-i18n="anon.label">Anonimizar datos personales (PII)</label>
+        <div class="row">
+          <select id="anonMode">
+            <option value="off" data-i18n="anon.off">No anonimizar</option>
+            <option value="seudo" data-i18n="anon.seudo">Seudonimizar para LLMs («PERSONA_1» + restaurable)</option>
+            <option value="typed" data-i18n="anon.typed">Tipado (&lt;PRIVATE_PERSON&gt;, &lt;ACCOUNT_NUMBER&gt;…)</option>
+            <option value="anon" data-i18n="anon.anon">Anónimo (todo como &lt;&lt;ANOM_DATA&gt;&gt;)</option>
+          </select>
+          <select id="anonStrict" class="hidden" style="white-space:nowrap">
+            <option value="balanceado" data-i18n="anon.balanced">Balanceado</option>
+            <option value="estricto" data-i18n="anon.strict">Estricto (tapa de más)</option>
+          </select>
+        </div>
+        <p class="adv-note" style="margin:6px 0 0" data-i18n="anon.note">Detecta y enmascara nombres, emails, teléfonos, direcciones, DNI/CUIT/CBU, etc. Procesado localmente en tu servidor. En facturas reconoce los campos por su etiqueta.</p>
+      </div>
+      <div class="field hidden" id="detectorsField" style="margin-top:18px">
+        <label data-i18n="det.title">Detectores de PII (encendé/apagá)</label>
+        <p class="adv-note" style="margin:2px 0 8px" data-i18n="det.help">Activá o desactivá cada detector según tu caso (algunos pueden dar falsos positivos). Se guarda en este navegador.</p>
+        <div id="detectorsBox"></div>
+      </div>
+      <div class="field" style="margin-top:18px">
+        <label data-i18n="rules.label">Reglas de anonimización propias (avanzado)</label>
+        <p class="adv-note" style="margin:2px 0 6px" data-i18n-html="rules.help">Definí tus propios patrones (legajos, números de socio, formatos internos) en un JSON. Motor <b>RE2</b> seguro. Se guarda solo en este navegador y aplica al anonimizar.</p>
+        <p style="margin:0 0 8px"><a class="link-btn" id="rulesTemplateLink" href="/static/anon-rules-template.json" download="anon-rules-template.json" data-i18n="rules.template">Descargar plantilla</a></p>
+        <textarea id="anonRules" rows="5" spellcheck="false" autocomplete="off" placeholder='{ "patterns": [ { "regex": "LEG-\\d{6}", "placeholder": "ID" } ] }' style="width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button id="validateRulesBtn" class="btn info sm" type="button" data-i18n="rules.validate">✓ Validar</button>
+          <button id="saveRulesBtn" class="btn ok sm" type="button" data-i18n="rules.save">Guardar</button>
+          <button id="clearRulesBtn" class="btn danger sm" type="button" data-i18n="rules.clear">Borrar</button>
+          <span id="rulesStatus" class="adv-note" style="align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stab-panel hidden" data-stab-panel="youtube">
+      <div class="field">
+        <label data-i18n="settings.ytCookies">Cookies de YouTube (opcional)</label>
+        <p class="adv-note" style="margin:2px 0 6px" data-i18n-html="settings.ytCookiesHelp">Si tu servidor está bloqueado por YouTube, pegá acá tu <b>cookies.txt</b> (exportado con una extensión tipo “Get cookies.txt LOCALLY”, ya logueado en YouTube). Se usa solo para tus pedidos y queda guardado únicamente en este navegador.</p>
+        <p style="margin:0 0 8px"><button class="link-btn" id="ytGuideBtn" type="button" data-i18n="settings.ytCookiesGuide">¿Cómo obtengo mis cookies?</button></p>
+        <textarea id="ytCookies" rows="4" spellcheck="false" autocomplete="off" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com   TRUE   /   TRUE   ..." style="width:100%;font-family:monospace;font-size:12px;resize:vertical;transition:filter .12s"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button id="saveYtCookiesBtn" class="btn ok sm" type="button" data-i18n="settings.ytCookiesSave">Guardar</button>
+          <button id="clearYtCookiesBtn" class="btn danger sm" type="button" data-i18n="settings.ytCookiesClear">Borrar</button>
+          <button id="toggleYtCookiesBtn" class="btn ghost sm" type="button" style="display:none" data-i18n="settings.ytCookiesShow">Mostrar</button>
+          <span id="ytCookiesStatus" class="adv-note" style="align-self:center"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: instructivo para obtener las cookies de YouTube -->
+<div class="modal-backdrop hidden" id="ytGuideModal" data-close>
+  <div class="modal" style="width:min(560px,96vw)">
+    <div class="modal-head">
+      <h3 data-i18n="ytguide.title">Cómo obtener tus cookies de YouTube</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <div class="adv-note" style="line-height:1.6" data-i18n-html="ytguide.body">
+      <ol style="padding-left:18px;margin:0">
+        <li><b>Instalá la extensión</b> (una sola vez): abrí <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a> y agregala a tu navegador (Chrome o Edge).</li>
+        <li>Entrá a <code>youtube.com</code> y asegurate de estar <b>con la sesión iniciada</b>.</li>
+        <li>Clic en el ícono de extensiones (🧩) → <b>Get cookies.txt LOCALLY</b>. En la ventanita, <b>Copy</b> (lo más fácil) o <b>Export</b> (descarga un archivo; abrilo y copiá todo).</li>
+        <li>Volvé acá, pegá todo en el campo <b>Cookies de YouTube</b> y dale <b>Guardar</b>.</li>
+      </ol>
+      <p style="margin:10px 0 0"><b>⚠️ Importante:</b> ese contenido es tu sesión de YouTube. Pegalo <b>solo</b> en este campo, nunca en un chat o mail. Si caduca (unas semanas), volvé a exportarlo.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: re-hidratar la respuesta del LLM (gateway de seudonimización) -->
+<div class="modal-backdrop hidden" id="rehydrateModal" data-close>
+  <div class="modal" style="width:min(720px,96vw)">
+    <div class="modal-head">
+      <h3 data-i18n="rehy.title">Re-hidratar respuesta del LLM</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <p class="adv-note" style="margin:0 0 8px" data-i18n="rehy.help">Pegá la respuesta del LLM (que menciona los tokens «PERSONA_1», «ID_2»…) y restaurá los valores reales — todo en este navegador.</p>
+    <textarea id="rehyIn" rows="6" spellcheck="false" placeholder="«PERSONA_1» firmó el contrato…" style="width:100%;font-size:13px;resize:vertical"></textarea>
+    <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+      <button id="rehyRun" class="btn" type="button" data-i18n="rehy.run">Restaurar</button>
+      <button id="rehyCopy" class="btn ghost sm" type="button" data-i18n="rehy.copy">Copiar</button>
+      <span id="rehyInfo" class="adv-note" style="align-self:center"></span>
+    </div>
+    <div class="preview" id="rehyOut" style="max-height:42vh;white-space:pre-wrap"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script src="/static/i18n.js?v=__VER__"></script>
+<script src="/static/app.js?v=__VER__"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Anonimal — dependencias del microservicio.
+# OPF (OpenAI Privacy Filter) se instala aparte en el Dockerfile desde su repo
+# (trae torch + transformers; es la parte pesada).
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+pydantic>=2.0,<3.0

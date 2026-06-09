@@ -1,0 +1,47 @@
+# Para probar local (docker compose up) o como referencia para EasyPanel.
+# Redis va EMBEBIDO dentro del contenedor (rate-limit compartido entre workers),
+# así que no hace falta un servicio aparte. Para Redis externo: definí REDIS_URL.
+services:
+  markitdown-web:
+    build: .
+    ports:
+      - "8000:8000"
+    # Carga TODAS las variables de .env (copiá .env.example -> .env).
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Endurecimiento del contenedor: sin escalado de privilegios.
+    security_opt:
+      - no-new-privileges:true
+    # Escriba le pega a Anonimal por la red interna (hostname del servicio).
+    environment:
+      - ANONIMAL_URL=http://anonimal:8000
+    depends_on:
+      - anonimal
+    # Opcional: limitar recursos (docker compose, no-swarm).
+    # mem_limit: 4g
+    # cpus: "4.0"
+
+  # ── Anonimal: anonimización de PII (OPF) ──────────────────────────────────
+  # Imagen aparte con el modelo horneado (~5 GB en RAM). SOLO red interna:
+  # NO tiene "ports", así no se expone a internet; solo Escriba le pega.
+  anonimal:
+    image: ghcr.io/diegoparras/anonimal:latest
+    # Para construir local en vez de bajar la imagen:  build: ./anonimal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - OPF_DEVICE=cpu
+      - ANONIMAL_MAX_CHARS=500000
+    # El modelo usa ~5 GB residentes; dejá aire.
+    # mem_limit: 6g
+
+  # ── Redis externo (OPCIONAL) ──────────────────────────────────────────────
+  # Solo si escalás a varias instancias. Descomentá y en .env poné:
+  #   EMBEDDED_REDIS=false
+  #   REDIS_URL=redis://redis:6379/0
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   command: ["redis-server", "--save", "", "--appendonly", "no"]

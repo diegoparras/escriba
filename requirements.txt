@@ -1,0 +1,39 @@
+# NOTA: youtube-transcript-api se fuerza a >=1.2 en el Dockerfile (--no-deps),
+# porque markitdown[all] pinea la 1.0.0 que tiene un bug con YouTube.
+#
+# MarkItDown con TODOS los convertidores (PDF, Office, audio, imágenes, etc.)
+# Versiones acotadas para reducir riesgo de supply-chain. Para fijar exacto:
+# instalá, corré `pip freeze > requirements.lock` y usá ese lock en prod.
+markitdown[all]>=0.1.0,<0.2
+
+# API web
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+python-multipart>=0.0.9,<0.1
+
+# Cliente LLM (la key la pone el usuario)
+openai>=1.0,<2.0
+
+# Stats del servidor (CPU / RAM)
+psutil>=5.9,<7.0
+
+# Descarga segura de URLs (anti-SSRF)
+requests>=2.31,<3.0
+
+# Rate-limit compartido entre workers/instancias (opcional, se activa con REDIS_URL)
+redis>=5.0,<6.0
+
+# Transcripción local de audio/video (Whisper offline)
+faster-whisper>=1.0,<2.0
+
+# Extracción robusta de subtítulos de YouTube (más resistente que la api directa)
+yt-dlp>=2024.1.0
+
+# Extracción de PDF que respeta la rotación de página (/Rotate y contenido
+# girado). pdfminer (el de markitdown) devuelve el texto al revés en hojas
+# apaisadas; PyMuPDF lo lee bien.
+pymupdf>=1.24,<2.0
+
+# Motor de regex RE2 (tiempo lineal) para las reglas de anonimización que sube
+# el usuario: el ReDoS es imposible por diseño. NUNCA usar `re` con esos patrones.
+google-re2>=1.1

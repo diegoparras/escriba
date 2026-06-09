@@ -1,0 +1,14 @@
+{
+  "_instructions": "Reglas de anonimizacion personalizadas para Escriba. Editá este archivo y volvé a subirlo. placeholder permitidos: PERSONA, ORG, ID, DOMICILIO, EMAIL, TEL, FECHA, SECRETO, DATO. Maximo 50 patrones; cada regex hasta 200 caracteres; motor RE2 (NO admite backreferences ni lookbehind). 'patterns' = tus formatos propios. 'labels' = enmascara el valor que sigue a esa etiqueta. 'keep' = textos que NUNCA se enmascaran. Borra los ejemplos y poné los tuyos.",
+  "version": 1,
+  "patterns": [
+    { "regex": "LEG-\\d{6}", "placeholder": "ID" },
+    { "regex": "SOCIO N° ?\\d+", "placeholder": "ID" },
+    { "regex": "EXP-\\d{4}/\\d{2}", "placeholder": "ID" }
+  ],
+  "labels": [
+    { "label": "Número de Socio", "placeholder": "ID" },
+    { "label": "Legajo", "placeholder": "ID" }
+  ],
+  "keep": ["Total", "Subtotal", "IVA"]
+}

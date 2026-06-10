@@ -32,7 +32,8 @@ built on [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
 - 🔗 **URLs & YouTube** — convert a web page or fetch a YouTube transcript.
 - 🔍 **Smart OCR** — text in images is recognized automatically; scanned **and rotated** PDFs are detected, OCR’d and auto‑straightened on the fly.
 - 🤖 **Optional AI** — OpenAI, Google Gemini (AI Studio) or OpenRouter, with a **“No AI”** default. Models are listed automatically.
-- 🛡️ **PII anonymization for LLMs** — a full local privacy engine ([see below](#-anonymization-for-llms)): NER model ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + layout‑aware invoice fields + validated detectors (credit‑card **Luhn**, **IBAN**) + your own **RE2** rules. Output it *typed*, *anonymous*, or **reversibly pseudonymized** (`«PERSONA_1»` → send to the LLM → re‑hydrate locally).
+- 🛡️ **PII anonymization for LLMs** — a full local privacy engine ([see below](#-anonymization-for-llms)): NER model ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + layout‑aware invoice fields + validated detectors (credit‑card **Luhn**, **IBAN**) + your own **RE2** rules. Five output modes: *typed*, *anonymous*, **reversibly pseudonymized** (`«PERSONA_1»` → send to the LLM → re‑hydrate locally), **partial masking** (`••••‑3456`) and **stable hashing** (same data → same pseudonym across documents).
+- ⬛ **Visual redaction** — download your PDF or scanned image with the PII **blacked out on the page**. True redaction: the text and the pixels underneath are removed from the file, not covered.
 - 🌍 **7 UI languages** — English, Español, Français, Português, Italiano, 中文, 日本語 (auto‑detected, switchable).
 - 👑😇👤 **Three access levels** — DIOS / ANGEL / HUMANO, each with its own password and limits.
 - 🔒 **Private by design** — uploaded files are deleted right after conversion; nothing is stored.
@@ -206,16 +207,25 @@ enabled by pointing `ANONIMAL_URL` at it (see [`anonimal/`](anonimal/)).
 - **Bring Your Own Rules** — upload a JSON of your own patterns/labels/keep‑list. User regex runs on **RE2** (linear time → **ReDoS‑proof**); strict JSON parsing, hard limits, closed placeholder allowlist.
 - **Entity propagation** — anything detected once is masked in every occurrence.
 
-**Three output modes:**
+**Five output modes:**
 
 | Mode | Output | Use |
 |---|---|---|
 | Typed | `<PRIVATE_PERSON>`, `<ACCOUNT_NUMBER>`… | keep the category visible |
 | Anonymous | `<<ANOM_DATA>>` | flatten everything |
 | **Pseudonymize** | `«PERSONA_1»` + a token→original map | **the LLM gateway** — anonymize → send to the LLM → **re‑hydrate** the reply locally |
+| Partial mask | `••••‑3456`, `j•••@domain.com` | keep a usable hint (last digits, email domain) — irreversible |
+| Stable hash | `«PERSONA_7590fc»` | same data → **same pseudonym in every document** (anonymized cross‑doc linkage) — irreversible |
 
 Two intensities (**Balanced** / **Strict**), all configurable **per browser**. The
 restore map and your custom rules never leave your machine.
+
+**⬛ Visual redaction.** For PDFs and scanned images, the result card offers a
+**“Redacted PDF”** download: every detected entity is **blacked out on the page**
+using true redaction — `apply_redactions` removes the underlying text *and* the
+image pixels beneath each box, so the data no longer exists in the output file.
+Scanned documents are OCR’d automatically first. Same detection stack
+(NER + detectors + invoice layout + your RE2 rules), zero extra RAM.
 
 ---
 
@@ -247,6 +257,10 @@ curl -b cookies.txt -F "file=@document.pdf"     https://your-domain/api/convert
   "words": 1234, "chars": 5678, "elapsed_ms": 87,
   "pdf_type": "scanned", "ocr_applied": true, "note": null }
 ```
+
+`POST /api/redact` (multipart/form-data): `file` (PDF or image), optional `lang`,
+`anon_strict`, `anon_detectors`, `anon_rules`. Returns the **redacted PDF**
+(binary) with the `X-Redacted-Entities` header counting what was blacked out.
 
 ---
 

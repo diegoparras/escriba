@@ -37,6 +37,7 @@ from . import auth
 from . import detectors as detectors_mod
 from . import ocr as ocr_mod
 from . import pdf_extract
+from . import redact as redact_mod
 from . import transcribe as tr_mod
 from . import yt_transcript
 from .security import SecurityError, assert_public_url, check_rate, ext_of, safe_fetch
@@ -472,7 +473,7 @@ async def convert(
     ocr_applied = False
     note = None
     invoice_pii = []   # campos PII de un comprobante (layout); se calcula con el PDF a mano
-    want_anon = (anonymize or "").strip().lower() in ("typed", "anon")
+    want_anon = (anonymize or "").strip().lower() in ("typed", "anon", "seudo", "mask", "hash")
 
     try:
         if url:
@@ -601,7 +602,7 @@ async def convert(
     anonymized = None
     pii_count = None
     pseudo_map = {}
-    if anon_mode in ("typed", "anon", "seudo") and markdown.strip():
+    if anon_mode in ("typed", "anon", "seudo", "mask", "hash") and markdown.strip():
         if not anonimal_mod.available():
             raise HTTPException(status_code=400, detail="La anonimización no está disponible en este servidor.")
         try:
@@ -654,6 +655,92 @@ async def validate_anon_rules(request: Request, anon_rules: Optional[str] = Form
     if not r:
         return {"ok": True, "empty": True, "patterns": 0, "labels": 0, "keep": 0}
     return {"ok": True, "patterns": len(r["patterns"]), "labels": len(r["labels"]), "keep": len(r["keep"])}
+
+
+@app.post("/api/redact")
+async def redact_endpoint(
+    request: Request,
+    file: UploadFile = File(...),
+    lang: Optional[str] = Form(default=None),
+    anon_strict: Optional[str] = Form(default=None),
+    anon_rules: Optional[str] = Form(default=None),
+    anon_detectors: Optional[str] = Form(default=None),
+):
+    """Censura VISUAL: devuelve el PDF con el PII tachado (redacción real:
+    el texto y los píxeles debajo de cada caja se eliminan del archivo)."""
+    role = _require(request)
+    caps = auth.caps_for(role)
+    if not anonimal_mod.available():
+        raise HTTPException(status_code=400, detail="La anonimización no está disponible en este servidor.")
+    try:
+        check_rate(role, _client_ip(request), caps["rate_per_min"])
+    except SecurityError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+
+    ext = ext_of(file.filename)
+    if ext != "pdf" and ext not in IMAGE_EXTS:
+        raise HTTPException(status_code=415, detail="La censura visual acepta PDFs e imágenes.")
+    try:
+        user_rules = anon_rules_mod.parse_rules(anon_rules)
+    except anon_rules_mod.AnonRulesError as e:
+        raise HTTPException(status_code=400, detail="Reglas de anonimización inválidas: %s" % e)
+    det_ids = None if anon_detectors is None else [x.strip() for x in anon_detectors.split(",") if x.strip()]
+    strict = str(anon_strict).lower() in ("1", "true", "yes", "on", "estricto", "strict")
+
+    role_max = caps["max_file_mb"] * 1024 * 1024
+    eff_max = role_max if caps["allow_internal"] else (
+        min([v for v in (MAX_UPLOAD_BYTES, role_max) if v]) if (MAX_UPLOAD_BYTES or role_max) else 0)
+    data = await _read_capped(file, eff_max)
+    tmp_path = _write_temp(data, Path(file.filename or "").suffix)
+    extra_tmp = []
+    try:
+        pdf_path = tmp_path
+        if ext != "pdf":
+            # Imagen → PDF de una página (después se le agrega capa de texto por OCR).
+            pdf_path = tmp_path + ".pdf"
+            extra_tmp.append(pdf_path)
+            await asyncio.to_thread(redact_mod.image_to_pdf, tmp_path, pdf_path)
+        # Sin capa de texto (escaneado / imagen) → OCR primero, si el rol puede.
+        if not redact_mod.has_text(pdf_path):
+            if not caps["ocr"]:
+                raise HTTPException(status_code=403, detail="Este documento necesita OCR y tu rol no puede usarlo.")
+            tess = ocr_mod.resolve_tess_langs(lang)
+            ocr_out = await asyncio.to_thread(ocr_mod.ocr_pdf, pdf_path, tess)
+            extra_tmp.append(ocr_out)
+            pdf_path = ocr_out
+        pdf_bytes, entities = await asyncio.to_thread(
+            redact_mod.redact_pdf, pdf_path, strict, user_rules, det_ids)
+    except HTTPException:
+        STATS["errors"] += 1
+        raise
+    except (redact_mod.RedactError, anonimal_mod.AnonimalError) as e:
+        # Falla SEGURA: nunca devolvemos el documento sin censurar.
+        STATS["errors"] += 1
+        raise HTTPException(status_code=503, detail=str(e))
+    except subprocess.TimeoutExpired:
+        STATS["errors"] += 1
+        raise HTTPException(status_code=504, detail="El OCR tardó demasiado y se canceló.")
+    except Exception as exc:  # noqa: BLE001
+        STATS["errors"] += 1
+        err_id = uuid.uuid4().hex[:8]
+        log.exception("Redacción visual falló [%s] rol=%s", err_id, role)
+        raise HTTPException(status_code=422, detail=f"No se pudo censurar el documento (ref {err_id}).") from exc
+    finally:
+        for p in [tmp_path] + extra_tmp:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+    base = re.sub(r"[^\w\-. ]", "_", Path(file.filename or "documento").stem) or "documento"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{base}-censurado.pdf"',
+            "X-Redacted-Entities": str(entities),
+        },
+    )
 
 
 def _write_temp(data: bytes, suffix: str) -> str:

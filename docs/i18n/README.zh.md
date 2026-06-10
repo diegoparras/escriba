@@ -29,7 +29,8 @@
 - 🔗 **网址与 YouTube** —— 转换网页，或获取 YouTube 视频的字幕转写。
 - 🔍 **智能 OCR** —— 自动识别图片中的文字；扫描版**及旋转的** PDF 会被即时检测、OCR 处理并自动纠正方向。
 - 🤖 **可选 AI** —— OpenAI、Google Gemini（AI Studio）或 OpenRouter，默认 **「不使用 AI」**。自动列出可用模型。
-- 🕵️ **PII 匿名化（可选）** —— 通过配套的 **Anonimal** 服务（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）在**本地**检测并遮蔽个人数据（姓名、邮箱、证件/税号…）。可选*带类型*（`<PRIVATE_PERSON>`）或*匿名*（`<<ANOM_DATA>>`）输出。
+- 🛡️ **面向 LLM 的 PII 匿名化** — 完整的本地隐私引擎：NER 模型（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）+ 基于版面的票据字段 + 校验型检测器（信用卡 **Luhn**、**IBAN**）+ 你自己的 **RE2** 规则。五种输出模式：*类型化*、*匿名*、**可还原假名化**（«PERSONA_1» → 发送给 LLM → 本地还原）、**部分掩码**（••••-3456）和**稳定哈希**（相同数据 → 跨文档相同假名）。
+- ⬛ **可视化遮蔽** — 下载 PII **在页面上被涂黑**的 PDF 或扫描图片。真正的涂黑：文字与底层像素都从文件中删除，而不是覆盖。
 - 🌍 **7 种界面语言** —— English、Español、Français、Português、Italiano、中文、日本語（自动检测，可切换）。
 - 👑😇👤 **三种访问级别** —— DIOS / ANGEL / HUMANO，各有独立密码与限额。
 - 🔒 **隐私优先** —— 上传的文件在转换后立即删除；不会存储任何内容。
@@ -209,6 +210,8 @@ curl -b cookies.txt -F "file=@document.pdf"     https://你的域名/api/convert
   "words": 1234, "chars": 5678, "elapsed_ms": 87,
   "pdf_type": "scanned", "ocr_applied": true, "note": null }
 ```
+
+`POST /api/redact`（multipart/form-data）：`file`（PDF 或图片），可选 `lang`、`anon_strict`、`anon_detectors`、`anon_rules`。返回**已遮蔽 PDF**（二进制），响应头 `X-Redacted-Entities` 为涂黑条目数。
 
 ---
 

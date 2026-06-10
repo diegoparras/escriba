@@ -13,6 +13,8 @@ la salida (tipada o anónima) desde el conjunto unificado de spans.
 
 DESACTIVADO si ANONIMAL_URL no está seteado (available() = False).
 """
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -200,6 +202,57 @@ def _build(text, merged, anon):
     return "".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Operadores extra (estilo Presidio): enmascarado parcial y hash estable
+# ---------------------------------------------------------------------------
+# Clave para el hash estable. Fijala con ANON_HASH_KEY para que el MISMO dato
+# produzca el MISMO seudónimo entre ejecuciones y entre documentos (linkage).
+_HASH_KEY = (os.getenv("ANON_HASH_KEY", "") or "escriba-pseudonym-v1").encode("utf-8")
+
+
+def _apply(text, merged, render):
+    """Reconstruye el texto aplicando render(fragmento, placeholder) a cada span."""
+    parts, cur = [], 0
+    for s in merged:
+        st, en = s["start"], s["end"]
+        if en <= cur:
+            continue
+        if st < cur:
+            st = cur
+        parts.append(text[cur:st])
+        parts.append(render(text[st:en], s["placeholder"]))
+        cur = en
+    parts.append(text[cur:])
+    return "".join(parts)
+
+
+def _mask_value(frag, typ):
+    """Enmascarado PARCIAL type-aware: conserva una pista mínima de utilidad sin
+    exponer el dato (últimos 4 de un ID, dominio del email, iniciales de nombres)."""
+    s = frag.strip()
+    if not s:
+        return frag
+    if typ == "EMAIL" and "@" in s:
+        local, _, dom = s.partition("@")
+        return "%s•••@%s" % (local[:1] or "•", dom)
+    if typ == "URL":
+        return "•••"
+    digits = re.sub(r"\D", "", s)
+    if typ in ("ID", "TEL") or len(digits) >= 6:    # numérico/identificador → últimos 4
+        last = s[-4:]
+        head = re.sub(r"[0-9A-Za-z]", "•", s[:-4])
+        return (head + last) if head else ("••••" + last)
+    # nombres / domicilios / texto libre → inicial de cada palabra
+    return " ".join((w[0] + "•" * max(1, len(w) - 1)) if w else w for w in s.split())
+
+
+def _hash_token(frag, typ):
+    """Seudónimo ESTABLE por HMAC: mismo dato (normalizado) → mismo token, acá y
+    en otros documentos. Irreversible y sin mapa (sirve para linkage anonimizado)."""
+    h = hmac.new(_HASH_KEY, frag.strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()[:6]
+    return "«%s_%s»" % (typ, h)
+
+
 def _known_spans(text, known_pii):
     """Localiza en el texto los valores de campos detectados por layout (factura)
     y los marca en TODAS sus apariciones, con el placeholder de su tipo."""
@@ -215,22 +268,10 @@ def _known_spans(text, known_pii):
     return out
 
 
-def anonymize(text: str, mode: str, strict: bool = False, known_pii=None,
-              rules=None, detector_ids=None):
-    """
-    Anonimiza `text`. mode ∈ {"typed","anon","seudo"}.
-    - strict: si no se especifican detectores, prende también los 'strict'.
-    - known_pii: campos detectados por layout (comprobantes); se enmascaran sí o sí.
-    - rules: reglas del usuario (RE2).
-    - detector_ids: lista de ids de detectores built-in activos (None = defaults).
-    Devuelve (texto, cantidad, mapa). Lanza AnonimalError si falla (el llamador
-    NO debe devolver el texto original: sería fuga de PII).
-    """
-    if mode not in ("typed", "anon", "seudo"):
-        raise AnonimalError(f"Modo de anonimización inválido: {mode!r}.")
-    if not text:
-        return text, 0, {}
-    text = _normalize(text)   # une cortes de línea de PDF antes de detectar
+def detect_spans(text, strict=False, known_pii=None, rules=None, detector_ids=None):
+    """Detecta PII y devuelve los spans FUSIONADOS sobre `text` tal cual
+    (los offsets valen sobre el texto recibido; acá NO se normaliza).
+    Lo usa anonymize() y también la redacción visual (redact.py)."""
     data = _detect(text)
     spans = _collect(text, data.get("detected_spans") or [])     # OPF (NER)
     spans += detectors.run(text, detector_ids, strict)           # detectores built-in
@@ -241,6 +282,35 @@ def anonymize(text: str, mode: str, strict: bool = False, known_pii=None,
     keep = anon_rules.keep_set(rules)         # lista blanca del usuario: nunca enmascarar
     if keep:
         merged = [s for s in merged if text[s["start"]:s["end"]].strip() not in keep]
+    return merged
+
+
+def anonymize(text: str, mode: str, strict: bool = False, known_pii=None,
+              rules=None, detector_ids=None):
+    """
+    Anonimiza `text`. mode ∈ {"typed","anon","seudo","mask","hash"}.
+      - typed  → placeholders por categoría (<PRIVATE_PERSON>…)
+      - anon   → un único placeholder <<ANOM_DATA>>
+      - seudo  → token reversible «PERSONA_1» + mapa (re-hidratable)
+      - mask   → enmascarado parcial type-aware (••••3456) — irreversible
+      - hash   → seudónimo estable por HMAC (mismo dato → mismo token) — irreversible
+    - strict: si no se especifican detectores, prende también los 'strict'.
+    - known_pii: campos detectados por layout (comprobantes); se enmascaran sí o sí.
+    - rules: reglas del usuario (RE2).
+    - detector_ids: lista de ids de detectores built-in activos (None = defaults).
+    Devuelve (texto, cantidad, mapa). Lanza AnonimalError si falla (el llamador
+    NO debe devolver el texto original: sería fuga de PII).
+    """
+    if mode not in ("typed", "anon", "seudo", "mask", "hash"):
+        raise AnonimalError(f"Modo de anonimización inválido: {mode!r}.")
+    if not text:
+        return text, 0, {}
+    text = _normalize(text)   # une cortes de línea de PDF antes de detectar
+    merged = detect_spans(text, strict, known_pii, rules, detector_ids)
     if mode == "seudo":
         return _pseudonymize(text, merged)    # (texto, cantidad, mapa token→original)
+    if mode == "mask":
+        return _apply(text, merged, lambda f, ph: _mask_value(f, _TYPE_NAME.get(ph, "DATO"))), len(merged), {}
+    if mode == "hash":
+        return _apply(text, merged, lambda f, ph: _hash_token(f, _TYPE_NAME.get(ph, "DATO"))), len(merged), {}
     return _build(text, merged, anon=(mode == "anon")), len(merged), {}

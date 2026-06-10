@@ -29,7 +29,8 @@ Una aplicación web auto‑alojable construida sobre [Microsoft MarkItDown](http
 - 🔗 **URLs y YouTube** — convierte una página web u obtiene la transcripción de un video de YouTube.
 - 🔍 **OCR inteligente** — el texto de las imágenes se reconoce automáticamente; los PDF escaneados **y rotados** se detectan, procesan con OCR y enderezan al vuelo.
 - 🤖 **IA opcional** — OpenAI, Google Gemini (AI Studio) u OpenRouter, con un valor por defecto de **«Sin IA»**. Los modelos se listan automáticamente.
-- 🕵️ **Anonimización de PII (opcional)** — detecta y enmascara datos personales (nombres, emails, DNI/CUIT/CBU…) de forma **local**, vía el servicio **Anonimal** ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)). Salida *tipada* (`<PRIVATE_PERSON>`) o *anónima* (`<<ANOM_DATA>>`).
+- 🛡️ **Anonimización de PII para LLMs** — motor de privacidad local completo: modelo NER ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + campos de comprobantes por layout + detectores validados (tarjeta **Luhn**, **IBAN**) + tus propias reglas **RE2**. Cinco modos de salida: *tipado*, *anónimo*, **seudonimizado reversible** («PERSONA_1» → envíalo al LLM → re-hidrátalo localmente), **enmascarado parcial** (••••-3456) y **hash estable** (mismo dato → mismo seudónimo entre documentos).
+- ⬛ **Censura visual** — descarga tu PDF o imagen escaneada con el PII **tachado sobre la página**. Redacción real: el texto y los píxeles de abajo se eliminan del archivo, no se tapan.
 - 🌍 **7 idiomas en la interfaz** — English, Español, Français, Português, Italiano, 中文, 日本語 (autodetectados y cambiables).
 - 👑😇👤 **Tres niveles de acceso** — DIOS / ANGEL / HUMANO, cada uno con su contraseña y límites.
 - 🔒 **Privado por diseño** — los archivos subidos se eliminan justo después de convertirse; no se almacena nada.
@@ -215,6 +216,8 @@ curl -b cookies.txt -F "file=@documento.pdf"    https://tu-dominio/api/convert
   "words": 1234, "chars": 5678, "elapsed_ms": 87,
   "pdf_type": "escaneado", "ocr_applied": true, "note": null }
 ```
+
+`POST /api/redact` (multipart/form-data): `file` (PDF o imagen), opcionales `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Devuelve el **PDF censurado** (binario) con la cabecera `X-Redacted-Entities` (cantidad de datos tachados).
 
 ---
 

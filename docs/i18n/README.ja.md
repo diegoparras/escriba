@@ -29,7 +29,8 @@
 - 🔗 **URL と YouTube** —— Web ページを変換、または YouTube 動画の文字起こしを取得。
 - 🔍 **スマート OCR** —— 画像内の文字を自動認識し、スキャン・**回転した** PDF を検出してその場で OCR 処理・自動回転補正。
 - 🤖 **任意の AI** —— OpenAI、Google Gemini（AI Studio）、OpenRouter。既定は **「AI を使わない」**。モデルは自動で一覧表示。
-- 🕵️ **PII 匿名化（任意）** —— 連携サービス **Anonimal**（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）で個人データ（氏名・メール・各種ID…）を**ローカル**で検出・マスク。*型付き*（`<PRIVATE_PERSON>`）または*匿名*（`<<ANOM_DATA>>`）出力。
+- 🛡️ **LLM 向け PII 匿名化** — 完全ローカルのプライバシーエンジン：NER モデル（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）+ レイアウト解析による請求書フィールド + 検証付き検出器（クレジットカード **Luhn**、**IBAN**）+ 独自の **RE2** ルール。出力は 5 モード：*型付き*、*匿名*、**可逆仮名化**（«PERSONA_1» → LLM に送信 → ローカルで復元）、**部分マスク**（••••-3456）、**安定ハッシュ**（同じデータ → 文書をまたいで同じ仮名）。
+- ⬛ **ビジュアル墨消し** — PII を**ページ上で黒塗り**した PDF・スキャン画像をダウンロード。本物の墨消し：テキストと下のピクセルはファイルから削除されます（上に被せるだけではありません）。
 - 🌍 **7 言語の UI** —— English、Español、Français、Português、Italiano、中文、日本語（自動検出、切替可能）。
 - 👑😇👤 **3 つのアクセスレベル** —— DIOS / ANGEL / HUMANO。それぞれ独自のパスワードと制限。
 - 🔒 **設計からプライベート** —— アップロードしたファイルは変換後すぐに削除。何も保存しません。
@@ -213,6 +214,8 @@ curl -b cookies.txt -F "file=@document.pdf"     https://あなたのドメイン
   "words": 1234, "chars": 5678, "elapsed_ms": 87,
   "pdf_type": "scanned", "ocr_applied": true, "note": null }
 ```
+
+`POST /api/redact`（multipart/form-data）：`file`（PDF または画像）、任意で `lang`、`anon_strict`、`anon_detectors`、`anon_rules`。**墨消し済み PDF**（バイナリ）を返し、ヘッダー `X-Redacted-Entities` に黒塗り件数が入ります。
 
 ---
 

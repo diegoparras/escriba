@@ -26,6 +26,7 @@
     --radius: 12px; --radius-lg: 16px;
     --ring: 0 0 0 3px rgba(239,139,102,.26);
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    color-scheme: dark;   /* widgets nativos (desplegables, scrollbars) en oscuro */
   }
   [data-theme="light"] {
     --bg: #fafafb; --bg-2: #ffffff; --panel: #ffffff;
@@ -37,6 +38,7 @@
     --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
     --ring: 0 0 0 3px rgba(224,106,58,.18);
     --shadow: 0 1px 2px rgba(15,15,20,.04), 0 12px 32px -16px rgba(15,15,20,.16);
+    color-scheme: light;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -143,6 +145,7 @@
   textarea, input[type="text"], input[type="password"], input[type="url"], select { width: 100%; background: var(--card-2); border: 1px solid var(--border); color: var(--text); border-radius: 9px; padding: 10px 13px; font-size: 14.5px; outline: none; transition: border-color .15s, box-shadow .15s; }
   textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: var(--ring); }
   select { cursor: pointer; }
+  select option { background: var(--panel); color: var(--text); }
   /* Campo de URL diferenciado: crema coral (8% del acento de marca) */
   #urlInput { background: color-mix(in srgb, var(--accent) 8%, var(--card-2));
     border-color: color-mix(in srgb, var(--accent) 22%, var(--border)); }
@@ -584,6 +587,8 @@
           <select id="anonMode">
             <option value="off" data-i18n="anon.off">No anonimizar</option>
             <option value="seudo" data-i18n="anon.seudo">Seudonimizar para LLMs («PERSONA_1» + restaurable)</option>
+            <option value="mask" data-i18n="anon.mask">Enmascarado parcial (••••3456 — conserva el final)</option>
+            <option value="hash" data-i18n="anon.hash">Hash estable (mismo dato → mismo seudónimo)</option>
             <option value="typed" data-i18n="anon.typed">Tipado (&lt;PRIVATE_PERSON&gt;, &lt;ACCOUNT_NUMBER&gt;…)</option>
             <option value="anon" data-i18n="anon.anon">Anónimo (todo como &lt;&lt;ANOM_DATA&gt;&gt;)</option>
           </select>

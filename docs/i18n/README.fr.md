@@ -29,7 +29,8 @@ Une application web auto‑hébergeable basée sur [Microsoft MarkItDown](https:
 - 🔗 **URL et YouTube** — convertit une page web ou récupère la transcription d’une vidéo YouTube.
 - 🔍 **OCR intelligent** — le texte des images est reconnu automatiquement ; les PDF scannés **et pivotés** sont détectés, traités par OCR et redressés à la volée.
 - 🤖 **IA en option** — OpenAI, Google Gemini (AI Studio) ou OpenRouter, avec un réglage par défaut **« Sans IA »**. Les modèles sont listés automatiquement.
-- 🕵️ **Anonymisation des PII (en option)** — détecte et masque les données personnelles (noms, e-mails, numéros d’identité…) en **local**, via le service **Anonimal** ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)). Sortie *typée* (`<PRIVATE_PERSON>`) ou *anonyme* (`<<ANOM_DATA>>`).
+- 🛡️ **Anonymisation des PII pour LLM** — moteur de confidentialité local complet : modèle NER ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + champs de factures par mise en page + détecteurs validés (carte **Luhn**, **IBAN**) + vos propres règles **RE2**. Cinq modes de sortie : *typé*, *anonyme*, **pseudonymisation réversible** («PERSONA_1» → envoyez au LLM → ré-hydratez localement), **masquage partiel** (••••-3456) et **hash stable** (même donnée → même pseudonyme d’un document à l’autre).
+- ⬛ **Caviardage visuel** — téléchargez votre PDF ou image scannée avec les PII **noircies sur la page**. Caviardage réel : le texte et les pixels en dessous sont supprimés du fichier, pas recouverts.
 - 🌍 **7 langues d’interface** — English, Español, Français, Português, Italiano, 中文, 日本語 (détectées automatiquement, changeables).
 - 👑😇👤 **Trois niveaux d’accès** — DIOS / ANGEL / HUMANO, chacun avec son mot de passe et ses limites.
 - 🔒 **Privé par conception** — les fichiers envoyés sont supprimés juste après la conversion ; rien n’est stocké.
@@ -215,6 +216,8 @@ curl -b cookies.txt -F "file=@document.pdf"     https://votre-domaine/api/conver
   "words": 1234, "chars": 5678, "elapsed_ms": 87,
   "pdf_type": "scanné", "ocr_applied": true, "note": null }
 ```
+
+`POST /api/redact` (multipart/form-data) : `file` (PDF ou image), options `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Renvoie le **PDF caviardé** (binaire) avec l’en-tête `X-Redacted-Entities`.
 
 ---
 

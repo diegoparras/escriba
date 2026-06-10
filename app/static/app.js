@@ -330,6 +330,8 @@ function updateProgressDom(it) {
 
 function wireResult(root, it) {
   const body = root.querySelector(".item-body");
+  const canRedact = CAPS && CAPS.anonimal && it.file &&
+    /\.(pdf|png|jpe?g|tiff?|bmp|webp)$/i.test(it.name || "");
   body.innerHTML = `
     <div class="resbar">
       <div class="tabs">
@@ -338,6 +340,7 @@ function wireResult(root, it) {
         <div class="tab" data-v="split">${t("tab.split")}</div>
       </div>
       <div class="spacer" style="flex:1"></div>
+      ${canRedact ? `<button class="btn ghost sm" data-act="redact">${t("res.redact")}</button>` : ""}
       <button class="btn ghost sm" data-act="zoom">${t("res.zoom")}</button>
       <button class="btn ghost sm" data-act="copy">${t("res.copy")}</button>
       <button class="btn ghost sm" data-act="dl">${t("res.dl")}</button>
@@ -360,6 +363,36 @@ function wireResult(root, it) {
   });
   body.querySelector('[data-act="dl"]').addEventListener("click", () => downloadMd(baseName(it.name), it.result.markdown || ""));
   body.querySelector('[data-act="zoom"]').addEventListener("click", () => openResultModal(it));
+  const rb = body.querySelector('[data-act="redact"]');
+  if (rb) rb.addEventListener("click", () => redactItem(it, rb));
+}
+
+// Censura visual: re-envía el archivo original y baja el PDF tachado.
+async function redactItem(it, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> ${t("redact.working")}`;
+  try {
+    const fd = new FormData();
+    fd.append("file", it.file);
+    const lang = $("lang")?.value; if (lang) fd.append("lang", lang);
+    fd.append("anon_strict", $("anonStrict")?.value || "balanceado");
+    fd.append("anon_detectors", getEnabledDetectors().join(","));
+    const rules = getAnonRules(); if (rules) fd.append("anon_rules", rules);
+    const res = await fetch("/api/redact", { method: "POST", body: fd });
+    if (!res.ok) {
+      let msg = "Error " + res.status;
+      try { msg = (await res.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
+    const n = res.headers.get("X-Redacted-Entities") || "0";
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = baseName(it.name) + "-censurado.pdf";
+    a.click(); URL.revokeObjectURL(a.href);
+    toast(t("redact.done", { n }), "ok");
+  } catch (e) { toast(e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = orig; }
 }
 
 // ---------- Modales ----------

@@ -29,7 +29,8 @@ Um aplicativo web auto‑hospedável construído sobre o [Microsoft MarkItDown](
 - 🔗 **URLs e YouTube** — converte uma página web ou obtém a transcrição de um vídeo do YouTube.
 - 🔍 **OCR inteligente** — o texto das imagens é reconhecido automaticamente; PDFs digitalizados **e rotacionados** são detectados, processados com OCR e endireitados na hora.
 - 🤖 **IA opcional** — OpenAI, Google Gemini (AI Studio) ou OpenRouter, com o padrão **«Sem IA»**. Os modelos são listados automaticamente.
-- 🕵️ **Anonimização de PII (opcional)** — detecta e mascara dados pessoais (nomes, e-mails, CPF/CNPJ…) **localmente**, via serviço **Anonimal** ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)). Saída *tipada* (`<PRIVATE_PERSON>`) ou *anônima* (`<<ANOM_DATA>>`).
+- 🛡️ **Anonimização de PII para LLMs** — motor de privacidade local completo: modelo NER ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + campos de comprovantes por layout + detectores validados (cartão **Luhn**, **IBAN**) + suas próprias regras **RE2**. Cinco modos de saída: *tipado*, *anônimo*, **pseudonimização reversível** («PERSONA_1» → envie ao LLM → reidrate localmente), **mascaramento parcial** (••••-3456) e **hash estável** (mesmo dado → mesmo pseudônimo entre documentos).
+- ⬛ **Censura visual** — baixe seu PDF ou imagem digitalizada com os dados **tachados na página**. Redação real: o texto e os pixels abaixo são removidos do arquivo, não cobertos.
 - 🌍 **7 idiomas na interface** — English, Español, Français, Português, Italiano, 中文, 日本語 (detectados automaticamente, alternáveis).
 - 👑😇👤 **Três níveis de acesso** — DIOS / ANGEL / HUMANO, cada um com sua senha e limites.
 - 🔒 **Privado por design** — os arquivos enviados são apagados logo após a conversão; nada é armazenado.
@@ -215,6 +216,8 @@ curl -b cookies.txt -F "file=@documento.pdf"    https://seu-dominio/api/convert
   "words": 1234, "chars": 5678, "elapsed_ms": 87,
   "pdf_type": "digitalizado", "ocr_applied": true, "note": null }
 ```
+
+`POST /api/redact` (multipart/form-data): `file` (PDF ou imagem), opcionais `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Retorna o **PDF censurado** (binário) com o cabeçalho `X-Redacted-Entities`.
 
 ---
 

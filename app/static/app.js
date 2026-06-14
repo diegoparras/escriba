@@ -348,7 +348,7 @@ function render() {
         if (e.target.closest(".x") || e.target.closest(".sel") || e.target.closest(".pg-pick")) return;
         if (it.status === "done") root.classList.toggle("open");
       });
-      root.querySelector(".pg-pick")?.addEventListener("click", (e) => { e.stopPropagation(); openPagesFor(it); });
+      root.querySelector(".pg-pick")?.addEventListener("click", (e) => { e.stopPropagation(); openPagesFor(it, e.currentTarget); });
       const cb = root.querySelector(".sel");
       if (cb) { cb.addEventListener("click", e => e.stopPropagation()); cb.addEventListener("change", () => { it.selected = cb.checked; updateSelUI(); }); }
       const x = root.querySelector(".x");
@@ -1329,6 +1329,7 @@ window.addEventListener("scroll", () => {
 // ---------- Asistente de selección de páginas: POR ARCHIVO (solo PDF) ----------
 // Cada ítem guarda su propia selección en it.pages ("" = todas; "1-23" rango; "1,6,9" sueltas).
 let _pagesItem = null;       // ítem que se está editando en el modal
+let _pagesBtnEl = null;      // referencia directa al botón .pg-pick que se tocó
 const _pgChips = [];         // páginas sueltas del modal abierto
 
 const IC_PAGES = '<svg class="pg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
@@ -1365,7 +1366,7 @@ function mountPagesPick(root, it) {
   if (root.querySelector(".pg-pick")) return;
   const chip = root.querySelector(".chip"); if (!chip) return;
   chip.insertAdjacentHTML("beforebegin", pagesPickInnerHtml(it));
-  root.querySelector(".pg-pick").addEventListener("click", (e) => { e.stopPropagation(); openPagesFor(it); });
+  root.querySelector(".pg-pick").addEventListener("click", (e) => { e.stopPropagation(); openPagesFor(it, e.currentTarget); });
 }
 
 const _pgMode = () => (document.querySelector('input[name="pgMode"]:checked') || {}).value || "all";
@@ -1426,8 +1427,8 @@ async function _pgLoadCount(it) {
     if (it._pageCount > 0 && !it.pages) $("pgTo").value = it._pageCount;   // default lindo si elige "rango"
   }
 }
-function openPagesFor(it) {
-  _pagesItem = it; _pgChips.length = 0;
+function openPagesFor(it, btnEl) {
+  _pagesItem = it; _pagesBtnEl = btnEl || null; _pgChips.length = 0;
   const spec = it.pages || "";
   $("pgFrom").value = "1"; $("pgTo").value = it._pageCount > 0 ? it._pageCount : "1";
   _pgSetTotal(it._pageCount != null ? it._pageCount : 0);
@@ -1451,8 +1452,10 @@ function openPagesFor(it) {
   $("pgApply").addEventListener("click", () => {
     if (_pagesItem) {
       _pagesItem.pages = _pgBuildSpec();
-      // Refrescá el badge del ítem por el camino canónico (updateItemNode escribe
-      // la etiqueta desde it.pages). Más robusto que un querySelector suelto.
+      const label = pagesBtnLabel(_pagesItem.pages || "");
+      // (1) Botón EXACTO que se tocó (referencia directa, sin querySelector): a prueba de balas.
+      if (_pagesBtnEl) _pagesBtnEl.innerHTML = IC_PAGES + "<span>" + escapeHtml(label) + "</span>";
+      // (2) Backstop por el camino de render (por si el nodo se hubiera recreado).
       const root = document.getElementById("it" + _pagesItem.id);
       if (root) updateItemNode(_pagesItem, root);
     }

@@ -546,8 +546,10 @@ async function loadModelPrices() {
   } catch {}
 }
 function panelModels() {
+  // Por defecto NO se muestra ningún modelo: el usuario los agrega desde el
+  // desplegable "Simular costo por modelo". Si ya eligió algunos, se respetan.
   try { const v = JSON.parse(localStorage.getItem(PANEL_STORE)); if (Array.isArray(v)) return v.filter(id => MODELS_BY_ID[id]); } catch {}
-  return MODELS_DEFAULTS.slice();
+  return [];
 }
 function setPanelModels(ids) { try { localStorage.setItem(PANEL_STORE, JSON.stringify(ids)); } catch {} }
 const ctxLabel = (n) => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M" : n >= 1000 ? Math.round(n / 1000) + "K" : "" + n;
@@ -585,8 +587,8 @@ function mountPanel(wrap, it) {
       <div class="llm-tok"><b>${nf(d.tokens)}</b> ${t("llm.tokens")}</div>
       <span class="llm-sub">${subParts.join(" · ")}</span>
     </div>
-    <table class="llm-tbl"><thead><tr><th>${t("llm.model")}</th><th>${t("llm.cost")}</th><th>${t("llm.context")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    <select class="llm-add"><option value="">+ ${t("llm.addModel")}</option>${opts}</select>
+    ${rows ? `<table class="llm-tbl"><thead><tr><th>${t("llm.model")}</th><th>${t("llm.cost")}</th><th>${t("llm.context")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : ""}
+    <select class="llm-add"><option value="">${t("llm.simCost")}</option>${opts}</select>
     ${inj}
   </div>`;
   wrap.querySelector(".llm-add").addEventListener("change", (e) => {

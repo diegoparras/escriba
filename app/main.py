@@ -701,6 +701,32 @@ def _pdf_subset(path, sel):
         doc.close()
 
 
+@app.post("/api/pdf_pages")
+async def pdf_pages(request: Request, file: UploadFile = File(...)):
+    """Devuelve la cantidad de páginas de un PDF (para el asistente de selección)."""
+    _csrf_check(request)
+    role = _require(request)
+    caps = auth.caps_for(role)
+    try:
+        check_rate(role, _client_ip(request), caps["rate_per_min"])
+    except SecurityError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    data = await _read_capped(file, _effective_max(caps))
+
+    def _count():
+        import fitz
+        try:
+            doc = fitz.open(stream=data, filetype="pdf")
+            try:
+                return doc.page_count
+            finally:
+                doc.close()
+        except Exception:  # noqa: BLE001
+            return 0
+
+    return {"pages": await asyncio.to_thread(_count)}
+
+
 @app.post("/api/convert")
 async def convert(
     request: Request,

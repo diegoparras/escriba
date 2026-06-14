@@ -334,6 +334,7 @@
   .pg-pick:hover { border-color: var(--accent); color: var(--text); background: var(--bg-2); }
   .pg-pick .pg-ico { width: 14px; height: 14px; }
   /* Asistente de selección de páginas */
+  .pg-total { font-size: 13px; font-weight: 600; color: var(--accent); margin: 0 0 12px; min-height: 18px; }
   .pg-opt { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 9px 2px; margin: 0; font-size: 14.5px; }
   .pg-opt input { width: auto; }
   .pg-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px 28px; color: var(--muted); font-size: 13.5px; }
@@ -556,6 +557,7 @@
         <div class="or" data-i18n="url.or">o pegá una URL o enlace de YouTube</div>
         <div class="row">
           <input id="urlInput" type="url" data-i18n-ph="url.ph" placeholder="https://ejemplo.com/articulo · PDF online · o https://youtu.be/… (transcripción)" />
+          <button id="openOptionsBtn" class="icon-btn opt-icon" type="button" data-i18n-title="adv.open" title="Configuración" aria-label="Configuración"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
           <button id="addUrlBtn" class="btn ghost hl-ok" data-i18n="url.add">Agregar</button>
         </div>
       </div>
@@ -838,7 +840,8 @@
       <h3 id="pagesModalTitle" data-i18n="pages.title">Páginas a convertir</h3>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
-    <p class="adv-note" style="margin:0 0 14px" data-i18n="pages.modalIntro">Elegí qué páginas del PDF convertir. (Solo aplica a archivos PDF.)</p>
+    <p class="adv-note" style="margin:0 0 8px" data-i18n="pages.modalIntro">Elegí qué páginas del PDF convertir. (Solo aplica a archivos PDF.)</p>
+    <div class="pg-total" id="pgTotal"></div>
 
     <label class="pg-opt"><input type="radio" name="pgMode" value="all" checked />
       <span data-i18n="pages.modeAll">Todo el documento</span></label>

@@ -764,7 +764,11 @@ function openResultModal(it) {
 }
 document.querySelectorAll(".modal-backdrop").forEach(bd => {
   bd.addEventListener("click", (e) => {
-    if (e.target === bd || e.target.closest(".modal-close") || e.target.closest("[data-close]")) {
+    // Cierra SOLO si: clic en el fondo, en la ✕, o en un control con [data-close]
+    // que NO sea el propio backdrop (el backdrop también lleva data-close, y un
+    // closest() ingenuo lo encontraría en CUALQUIER clic interno → cerraba siempre).
+    const dc = e.target.closest("[data-close]");
+    if (e.target === bd || e.target.closest(".modal-close") || (dc && dc !== bd)) {
       if (bd.id) closeModal(bd.id); else bd.classList.add("hidden");
     }
   });
@@ -1239,6 +1243,7 @@ function openSettings(tab) {
   if (tab) document.querySelector(`#settingsTabs .tab[data-stab="${tab}"]`)?.click();
 }
 $("settingsBtn").addEventListener("click", () => openSettings());
+$("openOptionsBtn")?.addEventListener("click", () => openSettings());
 // Tabs de Configuración (General / Conversión / IA / Anonimización / YouTube).
 document.querySelectorAll("#settingsTabs .tab").forEach(tb => {
   tb.addEventListener("click", () => {
@@ -1401,10 +1406,32 @@ function _pgAddChip() {
   if (v >= 1 && !_pgChips.includes(v)) { _pgChips.push(v); _pgRenderChips(); _pgUpdateSummary(); }
   $("pgChipInput").value = ""; $("pgChipInput").focus();
 }
+function _pgSetTotal(n) {
+  const el = $("pgTotal"); if (!el) return;
+  if (n > 0) {
+    el.textContent = t("pages.total", { n });
+    ["pgFrom", "pgTo", "pgChipInput"].forEach(id => { const e = $(id); if (e) e.max = n; });
+  } else { el.textContent = ""; }
+}
+async function _pgLoadCount(it) {
+  if (it._pageCount != null) { _pgSetTotal(it._pageCount); return; }
+  const el = $("pgTotal"); if (el) el.textContent = t("pages.totalLoading");
+  try {
+    const fd = new FormData(); fd.append("file", it.file);
+    const r = await fetch("/api/pdf_pages", { method: "POST", body: fd });
+    it._pageCount = (await r.json()).pages || 0;
+  } catch { it._pageCount = 0; }
+  if (_pagesItem === it) {   // el modal sigue abierto para este archivo
+    _pgSetTotal(it._pageCount);
+    if (it._pageCount > 0 && !it.pages) $("pgTo").value = it._pageCount;   // default lindo si elige "rango"
+  }
+}
 function openPagesFor(it) {
   _pagesItem = it; _pgChips.length = 0;
   const spec = it.pages || "";
-  $("pgFrom").value = "1"; $("pgTo").value = "1";
+  $("pgFrom").value = "1"; $("pgTo").value = it._pageCount > 0 ? it._pageCount : "1";
+  _pgSetTotal(it._pageCount != null ? it._pageCount : 0);
+  _pgLoadCount(it);
   if (!spec) { _pgSetMode("all"); }
   else if (/^\d+(-\d+)?$/.test(spec)) {
     const [a, b] = spec.split("-"); $("pgFrom").value = a; $("pgTo").value = b || a; _pgSetMode("range");

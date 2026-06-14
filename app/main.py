@@ -664,25 +664,38 @@ async def list_models(
         raise HTTPException(status_code=400, detail="No se pudieron obtener los modelos. Revisá la API key o el proveedor.")
 
 
+# Tope de páginas seleccionables (muy por encima de cualquier PDF real). Acota la
+# expansión de rangos para evitar un DoS por amplificación: un spec como
+# "1-2000000000" materializaría un set de miles de millones de enteros (OOM).
+MAX_PAGES_SPEC = 10000
+
+
 def _parse_pages(spec):
     """Parsea el rango de páginas elegido por el usuario a una lista 1-based,
     ordenada y sin repetidos. Acepta '1-23', '1:23', '1,6,9' y combinaciones
-    ('1-3,7,10-12'). Devuelve None si está vacío o si la sintaxis es inválida."""
+    ('1-3,7,10-12'). Devuelve None si está vacío, mal formado o fuera de límites.
+    Los tokens se limitan a <=7 dígitos y el total a MAX_PAGES_SPEC para no expandir
+    rangos astronómicos (anti-DoS)."""
     if not spec or not spec.strip():
         return None
     out = set()
     for part in spec.replace(" ", "").split(","):
         if not part:
             continue
-        m = re.match(r"^(\d+)[-:](\d+)$", part)
+        m = re.match(r"^(\d{1,7})[-:](\d{1,7})$", part)   # tope de dígitos: frena rangos enormes
         if m:
             a, b = int(m.group(1)), int(m.group(2))
             if a < 1 or b < 1:
                 return None
-            out.update(range(min(a, b), max(a, b) + 1))
-        elif part.isdigit() and int(part) >= 1:
+            lo, hi = min(a, b), max(a, b)
+            if hi - lo + 1 > MAX_PAGES_SPEC:             # rango demasiado grande → inválido
+                return None
+            out.update(range(lo, hi + 1))
+        elif re.fullmatch(r"\d{1,7}", part) and int(part) >= 1:
             out.add(int(part))
         else:
+            return None
+        if len(out) > MAX_PAGES_SPEC:                    # tope global acumulado
             return None
     return sorted(out) or None
 

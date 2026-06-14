@@ -1334,6 +1334,7 @@ const _pgChips = [];         // páginas sueltas del modal abierto
 
 const IC_PAGES = '<svg class="pg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
 
+const PG_MAX = 10000;   // tope de páginas (espeja MAX_PAGES_SPEC del backend; evita rangos enormes)
 function parsePagesSpec(spec) {
   // Devuelve {count} si la spec es válida (1-23 / 1:23 / 1,6,9 / combinaciones), o null.
   spec = (spec || "").replace(/\s+/g, "");
@@ -1341,13 +1342,16 @@ function parsePagesSpec(spec) {
   const set = new Set();
   for (const part of spec.split(",")) {
     if (!part) continue;
-    const m = part.match(/^(\d+)[-:](\d+)$/);
+    const m = part.match(/^(\d{1,7})[-:](\d{1,7})$/);   // tope de dígitos: frena rangos astronómicos
     if (m) {
       const a = +m[1], b = +m[2];
       if (a < 1 || b < 1) return null;
-      for (let n = Math.min(a, b); n <= Math.max(a, b); n++) set.add(n);
-    } else if (/^\d+$/.test(part) && +part >= 1) { set.add(+part); }
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      if (hi - lo + 1 > PG_MAX) return null;            // rango demasiado grande
+      for (let n = lo; n <= hi; n++) set.add(n);
+    } else if (/^\d{1,7}$/.test(part) && +part >= 1) { set.add(+part); }
     else { return null; }
+    if (set.size > PG_MAX) return null;                 // tope global
   }
   return set.size ? { count: set.size } : null;
 }
@@ -1417,13 +1421,13 @@ function _pgAddChip() {
   if (_pgMode() !== "single") _pgSetMode("single");   // tocar "Agregar" activa el modo sueltas/rangos
   const raw = ($("pgChipInput").value || "").trim().replace(/\s+/g, "");
   let chip = null;
-  if (/^\d+$/.test(raw) && +raw >= 1) {
+  if (/^\d{1,7}$/.test(raw) && +raw >= 1) {
     chip = raw;                                        // página suelta: "7"
   } else {
-    const m = raw.match(/^(\d+)[-:](\d+)$/);           // rango: "5-67" o "5:67"
+    const m = raw.match(/^(\d{1,7})[-:](\d{1,7})$/);   // rango: "5-67" o "5:67"
     if (m && +m[1] >= 1 && +m[2] >= 1) {
       let a = +m[1], b = +m[2]; if (a > b) { [a, b] = [b, a]; }
-      chip = a === b ? String(a) : a + "-" + b;
+      if (b - a + 1 <= PG_MAX) chip = a === b ? String(a) : a + "-" + b;   // rechaza rangos enormes
     }
   }
   if (chip && !_pgChips.includes(chip)) { _pgChips.push(chip); _pgRenderChips(); }

@@ -1,3 +1,6 @@
+# Normalización automática de saltos de línea: LF en el index, silencia el warning LF→CRLF.
+* text=auto
+
 # Los scripts de shell SIEMPRE con saltos de línea LF (si no, fallan en Linux).
 *.sh text eol=lf
 entrypoint.sh text eol=lf

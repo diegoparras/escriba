@@ -11,6 +11,7 @@ encima: el dato deja de existir en el archivo resultante.
 Sin dependencias nuevas: PyMuPDF y Tesseract/ocrmypdf ya están en la imagen.
 """
 import logging
+import os
 
 import fitz  # PyMuPDF
 
@@ -18,6 +19,12 @@ from . import anonimal
 from . import pdf_extract
 
 log = logging.getLogger("markitdown.redact")
+
+# Mismo criterio que main.SCANNED_THRESHOLD: un PDF con menos de estos caracteres
+# de texto se considera escaneado/sin capa de texto utilizable. Se lee del mismo
+# env var (con el mismo default) en vez de importar main.py para evitar el import
+# circular (main.py importa este módulo).
+SCANNED_THRESHOLD = int(os.getenv("SCANNED_THRESHOLD", "30"))
 
 # Separador entre páginas: detectamos el documento ENTERO en un solo pase de
 # Anonimal (una llamada HTTP) y después repartimos los spans por página.
@@ -40,7 +47,7 @@ def image_to_pdf(img_path: str, out_path: str) -> str:
 def has_text(path: str) -> bool:
     """True si el PDF ya tiene capa de texto utilizable."""
     try:
-        return len((pdf_extract.extract_pdf_text(path) or "").strip()) >= 30
+        return len((pdf_extract.extract_pdf_text(path) or "").strip()) >= SCANNED_THRESHOLD
     except Exception:  # noqa: BLE001
         return False
 
@@ -135,6 +142,8 @@ def redact_pdf(path: str, strict: bool = False, rules=None, detector_ids=None, o
                 for r in page_rects:
                     # Margen mínimo para cubrir antialiasing del render.
                     r.x0 -= 1; r.y0 -= 1; r.x1 += 1; r.y1 += 1
+                    # No sobrepasar los límites de la página tras expandir.
+                    r &= page.rect
                     page.add_redact_annot(r, fill=(0, 0, 0))
                 # REDACCIÓN REAL: borra el texto y ennegrece los píxeles
                 # de las imágenes debajo de cada rectángulo.

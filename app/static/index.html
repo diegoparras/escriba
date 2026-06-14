@@ -6,11 +6,10 @@
 <title>Escriba · El traductor universal al idioma de la IA</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
 <meta name="theme-color" content="#fdf7f3" />
-<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" />
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" integrity="sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" integrity="sha384-3HPB1XT51W3gGRxAmZ+qbZwRpRlFQL632y8x+adAqCr4Wp3TaWwCLSTAJJKbyWEK" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
+<!-- @fontsource-variable/inter/index.css: URL sin pin de versión (jsdelivr sirve la última = 5.2.8 hoy); NO se le agrega SRI porque rompería al publicarse una nueva versión. Falla con fallback a fuentes del sistema. -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter/index.css" />
 <style>
   /* Design system — neutro frío y afilado (estilo Linear/Vercel), acento coral de marca */
@@ -467,7 +466,7 @@
       <label class="login-label" for="loginPass" data-i18n="login.passLabel">Contraseña</label>
       <div class="pass-wrap">
         <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" />
-        <button type="button" class="pass-toggle" id="loginPassToggle" aria-label="Mostrar u ocultar contraseña"></button>
+        <button type="button" class="pass-toggle" id="loginPassToggle" data-i18n-label="login.passToggle" aria-label="Mostrar u ocultar la contraseña"></button>
       </div>
       <button id="loginBtn" class="btn" style="width:100%;margin-top:14px" data-i18n="login.enter">Entrar →</button>
       <div class="roles-hint">
@@ -485,7 +484,7 @@
     <div class="logo"><img class="logomark" src="/static/logo.svg" alt="Escriba" /> Escriba</div>
     <div class="spacer"></div>
     <div class="menu-wrap hidden" id="stats">
-      <button class="status-chip" id="statsChip" data-i18n-title="nav.resources" title="Recursos del servidor" aria-haspopup="true">
+      <button class="status-chip" id="statsChip" data-i18n-title="nav.resources" title="Recursos del servidor" aria-haspopup="menu" aria-expanded="false" aria-controls="statsPop">
         <span class="res" title="CPU"><svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg><span class="status-dot" id="cpuDot"></span></span>
         <span class="res" title="RAM"><svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="1.5"/><path d="M6 17v3M10 17v3M14 17v3M18 17v3"/></svg><span class="status-dot" id="ramDot"></span></span>
       </button>
@@ -500,7 +499,7 @@
     </div>
     <div class="topbar-actions">
       <div class="menu-wrap">
-        <button class="icon-btn" id="menuBtn" data-i18n-title="nav.menu" title="Menú" aria-haspopup="true" style="font-size:20px;line-height:1">⋯</button>
+        <button class="icon-btn" id="menuBtn" data-i18n-title="nav.menu" title="Menú" aria-haspopup="menu" aria-expanded="false" aria-controls="headerMenu" style="font-size:20px;line-height:1">⋯</button>
         <div class="menu hidden" id="headerMenu" role="menu">
           <div class="menu-head"><span class="badge" id="roleBadge"></span></div>
           <div class="menu-sep"></div>
@@ -549,7 +548,7 @@
 
   <div class="queue" id="queue"></div>
 
-  <div class="actionbar" id="actionBar" aria-hidden="true">
+  <div class="actionbar" id="actionBar">
     <div class="actionbar-inner">
       <span class="ab-count" id="abCount"></span>
       <div class="ab-actions">
@@ -573,9 +572,9 @@
 
 <!-- Modal: formatos compatibles -->
 <div class="modal-backdrop hidden" id="formatsModal" data-close>
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="formatsModalTitle">
     <div class="modal-head">
-      <h3 data-i18n="formats.title">Formatos compatibles</h3>
+      <h3 id="formatsModalTitle" data-i18n="formats.title">Formatos compatibles</h3>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
     <p class="adv-note" style="margin:0 0 4px" data-i18n="formats.desc">Subí cualquiera de estos tipos. La detección es automática.</p>
@@ -585,9 +584,9 @@
 
 <!-- Modal: acerca de -->
 <div class="modal-backdrop hidden" id="aboutModal" data-close>
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="aboutModalTitle">
     <div class="modal-head">
-      <div class="logo"><img class="logomark" src="/static/logo.svg" alt="Escriba" /> Escriba</div>
+      <div class="logo" id="aboutModalTitle"><img class="logomark" src="/static/logo.svg" alt="Escriba" /> Escriba</div>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
     <p class="sub" style="font-size:15px;text-align:left;margin:0 0 16px" data-i18n="brand.tagline">El traductor universal al idioma de la IA.</p>
@@ -601,7 +600,7 @@
 
 <!-- Modal: vista ampliada del resultado -->
 <div class="modal-backdrop hidden" id="resultModal" data-close>
-  <div class="modal lg">
+  <div class="modal lg" role="dialog" aria-modal="true" aria-labelledby="rmTitle">
     <div class="modal-head">
       <h3 id="rmTitle">Resultado</h3>
       <button class="btn ghost sm" id="rmCopy" type="button">Copiar</button>
@@ -614,9 +613,9 @@
 
 <!-- Modal: configuración -->
 <div class="modal-backdrop hidden" id="settingsModal" data-close>
-  <div class="modal" style="width:min(580px,96vw)">
+  <div class="modal" style="width:min(580px,96vw)" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
     <div class="modal-head">
-      <h3 data-i18n="settings.title">Configuración</h3>
+      <h3 id="settingsModalTitle" data-i18n="settings.title">Configuración</h3>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
     <div class="tabs settings-tabs" id="settingsTabs">
@@ -629,14 +628,14 @@
 
     <div class="stab-panel" data-stab-panel="general">
       <div class="field">
-        <label data-i18n="settings.language">Idioma de la interfaz</label>
+        <label for="langSelect" data-i18n="settings.language">Idioma de la interfaz</label>
         <select id="langSelect"></select>
       </div>
     </div>
 
     <div class="stab-panel hidden" data-stab-panel="conv">
       <div class="field">
-        <label data-i18n="adv.docLang">Idioma del documento (mejora transcripción de audio)</label>
+        <label for="lang" data-i18n="adv.docLang">Idioma del documento (mejora transcripción de audio)</label>
         <select id="lang">
           <option value="auto" data-i18n="dl.auto">Detección automática</option>
           <option value="es-ES" data-i18n="dl.es">Español</option>
@@ -663,7 +662,7 @@
 
     <div class="stab-panel hidden" data-stab-panel="ai">
       <div class="field">
-        <label data-i18n="ai.provider">Proveedor de IA</label>
+        <label for="provider" data-i18n="ai.provider">Proveedor de IA</label>
         <select id="provider">
           <option value="none" data-i18n="prov.none">Sin IA (solo texto / OCR local)</option>
           <option value="auto" data-i18n="prov.auto">Automático (según la key)</option>
@@ -674,17 +673,17 @@
         </select>
       </div>
       <div class="field" style="margin-top:16px">
-        <label data-i18n="ai.keyLabel">API Key (OpenAI sk-… o Gemini AIza…)</label>
+        <label for="apiKey" data-i18n="ai.keyLabel">API Key (OpenAI sk-… o Gemini AIza…)</label>
         <input id="apiKey" type="password" data-i18n-ph="ai.keyPh" placeholder="sk-…  ·  AIza…  (no se guarda)" autocomplete="off" />
       </div>
       <div class="field" style="margin-top:16px">
-        <label data-i18n="ai.model">Modelo</label>
+        <label for="model" data-i18n="ai.model">Modelo</label>
         <div class="row">
           <select id="model"><option value="" data-i18n="ai.modelPh">— escribí tu API key y "Traer modelos" —</option></select>
           <button id="fetchModelsBtn" class="btn ghost" type="button" style="white-space:nowrap" data-i18n="ai.fetch">↻ Traer modelos</button>
         </div>
       </div>
-      <div class="field hidden" id="baseUrlField" style="margin-top:16px"><label data-i18n="ai.baseUrl">Base URL (endpoint compatible OpenAI)</label><input id="baseUrl" type="text" placeholder="https://api.openai.com/v1" /></div>
+      <div class="field hidden" id="baseUrlField" style="margin-top:16px"><label for="baseUrl" data-i18n="ai.baseUrl">Base URL (endpoint compatible OpenAI)</label><input id="baseUrl" type="text" placeholder="https://api.openai.com/v1" /></div>
       <div class="field" style="margin-top:16px">
         <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0">
           <input id="rememberKey" type="checkbox" style="width:auto" />
@@ -696,7 +695,7 @@
 
     <div class="stab-panel hidden" data-stab-panel="anon">
       <div class="field hidden" id="anonField">
-        <label data-i18n="anon.label">Anonimizar datos personales (PII)</label>
+        <label for="anonMode" data-i18n="anon.label">Anonimizar datos personales (PII)</label>
         <div class="row">
           <select id="anonMode">
             <option value="off" data-i18n="anon.off">No anonimizar</option>
@@ -719,7 +718,7 @@
         <div id="detectorsBox"></div>
       </div>
       <div class="field" style="margin-top:18px">
-        <label data-i18n="rules.label">Reglas de anonimización propias (avanzado)</label>
+        <label for="anonRules" data-i18n="rules.label">Reglas de anonimización propias (avanzado)</label>
         <p class="adv-note" style="margin:2px 0 6px" data-i18n-html="rules.help">Definí tus propios patrones (legajos, números de socio, formatos internos) en un JSON. Motor <b>RE2</b> seguro. Se guarda solo en este navegador y aplica al anonimizar.</p>
         <p style="margin:0 0 8px"><a class="link-btn" id="rulesTemplateLink" href="/static/anon-rules-template.json" download="anon-rules-template.json" data-i18n="rules.template">Descargar plantilla</a></p>
         <textarea id="anonRules" rows="5" spellcheck="false" autocomplete="off" placeholder='{ "patterns": [ { "regex": "LEG-\\d{6}", "placeholder": "ID" } ] }' style="width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
@@ -734,7 +733,7 @@
 
     <div class="stab-panel hidden" data-stab-panel="youtube">
       <div class="field">
-        <label data-i18n="settings.ytCookies">Cookies de YouTube (opcional)</label>
+        <label for="ytCookies" data-i18n="settings.ytCookies">Cookies de YouTube (opcional)</label>
         <p class="adv-note" style="margin:2px 0 6px" data-i18n-html="settings.ytCookiesHelp">Si tu servidor está bloqueado por YouTube, pegá acá tu <b>cookies.txt</b> (exportado con una extensión tipo “Get cookies.txt LOCALLY”, ya logueado en YouTube). Se usa solo para tus pedidos y queda guardado únicamente en este navegador.</p>
         <p style="margin:0 0 8px"><button class="link-btn" id="ytGuideBtn" type="button" data-i18n="settings.ytCookiesGuide">¿Cómo obtengo mis cookies?</button></p>
         <textarea id="ytCookies" rows="4" spellcheck="false" autocomplete="off" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com   TRUE   /   TRUE   ..." style="width:100%;font-family:monospace;font-size:12px;resize:vertical;transition:filter .12s"></textarea>
@@ -751,9 +750,9 @@
 
 <!-- Modal: instructivo para obtener las cookies de YouTube -->
 <div class="modal-backdrop hidden" id="ytGuideModal" data-close>
-  <div class="modal" style="width:min(560px,96vw)">
+  <div class="modal" style="width:min(560px,96vw)" role="dialog" aria-modal="true" aria-labelledby="ytGuideModalTitle">
     <div class="modal-head">
-      <h3 data-i18n="ytguide.title">Cómo obtener tus cookies de YouTube</h3>
+      <h3 id="ytGuideModalTitle" data-i18n="ytguide.title">Cómo obtener tus cookies de YouTube</h3>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
     <div class="adv-note" style="line-height:1.6" data-i18n-html="ytguide.body">
@@ -770,9 +769,9 @@
 
 <!-- Modal: re-hidratar la respuesta del LLM (gateway de seudonimización) -->
 <div class="modal-backdrop hidden" id="rehydrateModal" data-close>
-  <div class="modal" style="width:min(720px,96vw)">
+  <div class="modal" style="width:min(720px,96vw)" role="dialog" aria-modal="true" aria-labelledby="rehydrateModalTitle">
     <div class="modal-head">
-      <h3 data-i18n="rehy.title">Re-hidratar respuesta del LLM</h3>
+      <h3 id="rehydrateModalTitle" data-i18n="rehy.title">Re-hidratar respuesta del LLM</h3>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
     <p class="adv-note" style="margin:0 0 8px" data-i18n="rehy.help">Pegá la respuesta del LLM (que menciona los tokens «PERSONA_1», «ID_2»…) y restaurá los valores reales — todo en este navegador.</p>
@@ -787,9 +786,9 @@
 </div>
 
 <div class="modal-backdrop hidden" id="redactPreviewModal" data-close>
-  <div class="modal" style="width:min(640px,96vw)">
+  <div class="modal" style="width:min(640px,96vw)" role="dialog" aria-modal="true" aria-labelledby="redactPreviewModalTitle">
     <div class="modal-head">
-      <h3 data-i18n="rp.title">Vista previa de censura</h3>
+      <h3 id="redactPreviewModalTitle" data-i18n="rp.title">Vista previa de censura</h3>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
     <p class="adv-note" style="margin:0 0 4px">
@@ -816,9 +815,9 @@
 </div>
 
 <div class="modal-backdrop hidden" id="redactLevelModal" data-close>
-  <div class="modal" style="width:min(540px,96vw)">
+  <div class="modal" style="width:min(540px,96vw)" role="dialog" aria-modal="true" aria-labelledby="redactLevelModalTitle">
     <div class="modal-head">
-      <h3 data-i18n="rl.title">Nivel de censura</h3>
+      <h3 id="redactLevelModalTitle" data-i18n="rl.title">Nivel de censura</h3>
       <button class="modal-close" data-close type="button">✕</button>
     </div>
     <p class="adv-note" style="margin:0 0 12px" data-i18n="rl.intro">Elige cuánto tachar. Después revisas y ajustas uno por uno.</p>
@@ -839,7 +838,7 @@
   </div>
 </div>
 
-<div class="toasts" id="toasts"></div>
+<div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="true"></div>
 <script src="/static/i18n.js?v=__VER__"></script>
 <script src="/static/app.js?v=__VER__"></script>
 </body>

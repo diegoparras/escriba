@@ -18,6 +18,7 @@ import hmac
 import logging
 import os
 import re
+import unicodedata
 
 import requests
 
@@ -27,15 +28,28 @@ from . import detectors
 log = logging.getLogger("markitdown.anonimal")
 
 ANONIMAL_URL = (os.getenv("ANONIMAL_URL", "") or "").rstrip("/")
+# NOTA: el texto es "ANOM_DATA" (con M), no "ANON_DATA". Es INTENCIONAL: este
+# literal es contrato estable con la UI (index.html) y las claves anon.anon de
+# i18n.js en los 7 idiomas. Renombrarlo rompería compatibilidad, así que se
+# conserva tal cual a propósito.
 ANON_PLACEHOLDER = "<<ANOM_DATA>>"
 
 # Read timeout (segundos) del pedido a Anonimal. La inferencia en CPU puede
-# tardar en documentos grandes; subilo con la env ANONIMAL_TIMEOUT. 0 = sin tope.
+# tardar en documentos grandes; subilo con la env ANONIMAL_TIMEOUT.
+# 0 (o un valor mayor) se topea en _MAX_READ_TIMEOUT para no quedar sin límite.
+_MAX_READ_TIMEOUT = 600   # tope duro (segundos): nunca esperamos indefinidamente
 try:
     _READ_TIMEOUT = int(os.getenv("ANONIMAL_TIMEOUT", "180"))
 except ValueError:
     _READ_TIMEOUT = 180
-_TIMEOUT = (5, _READ_TIMEOUT or None)   # (connect, read); None = sin límite de lectura
+# 0 (o falsy) significa "lo más alto permitido", NO "sin tope".
+_TIMEOUT = (5, min(_READ_TIMEOUT or _MAX_READ_TIMEOUT, _MAX_READ_TIMEOUT))   # (connect, read)
+
+
+# Modos de anonimización REALES soportados por anonymize(). Fuente única de
+# verdad: main.py la consume como anonimal_mod.MODES en vez de re-listar los
+# literales. NO agregar modos acá sin implementarlos en anonymize().
+MODES = frozenset({"typed", "anon", "seudo", "mask", "hash"})
 
 
 class AnonimalError(Exception):
@@ -160,7 +174,7 @@ def _pseudonymize(text, merged):
     token→original) para poder RE-HIDRATAR la respuesta del LLM después."""
     counters, token_for = {}, {}
 
-    def tok(ph, frag):
+    def tok(frag, ph):   # firma render(frag, placeholder) para _apply
         if frag in token_for:
             return token_for[frag]
         typ = _TYPE_NAME.get(ph, "DATO")
@@ -169,42 +183,28 @@ def _pseudonymize(text, merged):
         token_for[frag] = t
         return t
 
-    parts, cur = [], 0
-    for s in merged:
-        st, en = s["start"], s["end"]
-        if en <= cur:
-            continue
-        if st < cur:
-            st = cur
-        parts.append(text[cur:st])
-        parts.append(tok(s["placeholder"], text[st:en]))
-        cur = en
-    parts.append(text[cur:])
+    out = _apply(text, merged, tok)
     mapping = {t: orig for orig, t in token_for.items()}   # token → original
-    return "".join(parts), len(token_for), mapping
+    return out, len(token_for), mapping
+
+
+_TOKEN_RE = re.compile(r"«[A-Z]+_[0-9A-Za-z]+»")
 
 
 def restore(text: str, mapping: dict) -> str:
     """Re-hidrata: reemplaza los tokens por sus valores originales. Lo usa el
-    usuario sobre la respuesta del LLM. Tokens más largos primero (evita choques)."""
-    for token in sorted(mapping or {}, key=len, reverse=True):
-        text = text.replace(token, mapping[token])
-    return text
+    usuario sobre la respuesta del LLM. Un único pase con re.sub sobre el patrón
+    «TIPO_N» evita reprocesar lo ya reemplazado (si un valor original contiene
+    la cadena de otro token, no se vuelve a tocar)."""
+    if not mapping:
+        return text
+    return _TOKEN_RE.sub(lambda m: mapping.get(m.group(0), m.group(0)), text)
 
 
 def _build(text, merged, anon):
-    parts, cur = [], 0
-    for s in merged:
-        st, en = s["start"], s["end"]
-        if en <= cur:
-            continue
-        if st < cur:
-            st = cur
-        parts.append(text[cur:st])
-        parts.append(ANON_PLACEHOLDER if anon else s["placeholder"])
-        cur = en
-    parts.append(text[cur:])
-    return "".join(parts)
+    """typed → placeholder por tipo; anon → un único <<ANOM_DATA>>."""
+    render = (lambda f, ph: ANON_PLACEHOLDER) if anon else (lambda f, ph: ph)
+    return _apply(text, merged, render)
 
 
 # ---------------------------------------------------------------------------
@@ -244,8 +244,11 @@ def _mask_value(frag, typ):
         return "•••"
     digits = re.sub(r"\D", "", s)
     if typ in ("ID", "TEL") or len(digits) >= 6:    # numérico/identificador → últimos 4
-        last = s[-4:]
-        head = re.sub(r"[0-9A-Za-z]", "•", s[:-4])
+        # Revelar a lo sumo 4 chars, y SIEMPRE dejar >=1 char enmascarado: con
+        # strings cortos (len<=4) revelar todo sería filtrar el dato completo.
+        reveal = max(0, min(4, len(s) - 1))
+        last = s[-reveal:] if reveal else ""
+        head = re.sub(r"[0-9A-Za-z]", "•", s[:len(s) - reveal])
         return (head + last) if head else ("••••" + last)
     # nombres / domicilios / texto libre → inicial de cada palabra
     return " ".join((w[0] + "•" * max(1, len(w) - 1)) if w else w for w in s.split())
@@ -256,6 +259,13 @@ def _hash_token(frag, typ):
     en otros documentos. Irreversible y sin mapa (sirve para linkage anonimizado)."""
     h = hmac.new(_HASH_KEY, frag.strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()[:6]
     return "«%s_%s»" % (typ, h)
+
+
+def _keep_key(s: str) -> str:
+    """Clave normalizada para comparar contra la lista blanca del usuario:
+    NFC + casefold, de modo que la comparación sea insensible a mayúsculas y a
+    la forma de normalización Unicode."""
+    return unicodedata.normalize("NFC", s).strip().casefold()
 
 
 def _known_spans(text, known_pii):
@@ -286,7 +296,12 @@ def detect_spans(text, strict=False, known_pii=None, rules=None, detector_ids=No
     merged = _merge(spans)
     keep = anon_rules.keep_set(rules)         # lista blanca del usuario: nunca enmascarar
     if keep:
-        merged = [s for s in merged if text[s["start"]:s["end"]].strip() not in keep]
+        # Comparación insensible a mayúsculas y a forma Unicode (NFC + casefold):
+        # "José" en la whitelist matchea aunque el doc traiga "JOSÉ" o la forma
+        # descompuesta (NFD) del mismo texto.
+        keep_norm = {_keep_key(k) for k in keep}
+        merged = [s for s in merged
+                  if _keep_key(text[s["start"]:s["end"]]) not in keep_norm]
     return merged
 
 
@@ -305,8 +320,15 @@ def anonymize(text: str, mode: str, strict: bool = False, known_pii=None,
     - detector_ids: lista de ids de detectores built-in activos (None = defaults).
     Devuelve (texto, cantidad, mapa). Lanza AnonimalError si falla (el llamador
     NO debe devolver el texto original: sería fuga de PII).
+
+    OJO con la semántica de `cantidad` (pii_count): NO es uniforme entre modos.
+      - typed/anon/mask/hash → cuenta OCURRENCIAS (len(merged): cada span fusionado).
+      - seudo               → cuenta ENTIDADES ÚNICAS (un token por valor distinto).
+    Es a propósito: en seudo el mismo valor colapsa a un único token, mientras que
+    los demás modos enmascaran cada aparición por separado. Si algún consumidor
+    necesita una métrica comparable entre modos, debe normalizarla aguas arriba.
     """
-    if mode not in ("typed", "anon", "seudo", "mask", "hash"):
+    if mode not in MODES:
         raise AnonimalError(f"Modo de anonimización inválido: {mode!r}.")
     if not text:
         return text, 0, {}

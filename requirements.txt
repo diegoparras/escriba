@@ -26,7 +26,9 @@ redis>=5.0,<6.0
 # Transcripción local de audio/video (Whisper offline)
 faster-whisper>=1.0,<2.0
 
-# Extracción robusta de subtítulos de YouTube (más resistente que la api directa)
+# Extracción robusta de subtítulos de YouTube (más resistente que la api directa).
+# Para dev local. En la imagen Docker, el Dockerfile lo re-instala con `-U` (siempre
+# la última) porque YouTube cambia seguido; este pin es el piso para entornos locales.
 yt-dlp>=2024.1.0
 
 # Extracción de PDF que respeta la rotación de página (/Rotate y contenido

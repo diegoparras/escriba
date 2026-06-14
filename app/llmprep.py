@@ -36,6 +36,8 @@ def count_tokens(text: str) -> int:
             return len(e.encode(text or "", disallowed_special=()))
         except Exception:  # noqa: BLE001
             pass
+    # Fallback sin tiktoken: estimación ~4 chars/token. Tiende a SUBESTIMAR en
+    # textos con muchos caracteres multibyte/CJK (más tokens por carácter).
     return max(1, len(text or "") // 4)
 
 
@@ -116,7 +118,11 @@ def detect_injection(text: str):
 # ---------------------------------------------------------------------------
 # Chunking para RAG (por presupuesto de tokens, con solapamiento)
 # ---------------------------------------------------------------------------
-def chunk(md: str, size: int = 1024, overlap: int = 64):
+DEFAULT_SIZE = 1024
+DEFAULT_OVERLAP = 64
+
+
+def chunk(md: str, size: int = DEFAULT_SIZE, overlap: int = DEFAULT_OVERLAP):
     if not md:
         return []
     e = _enc()
@@ -128,15 +134,12 @@ def chunk(md: str, size: int = 1024, overlap: int = 64):
             return chunker(md, overlap=overlap)
         except Exception as ex:  # noqa: BLE001
             log.warning("semchunk falló (%s); uso corte por caracteres", ex)
+    # Fallback por caracteres: APROXIMADO (asume ~4 chars/token). Avanza por
+    # `step` para dejar el solapamiento pedido; descarta chunks vacíos/solo-espacio
+    # (p.ej. el corte final puede quedar en blanco).
     step = max(1, (size - overlap) * 4)
-    return [md[i:i + size * 4] for i in range(0, len(md), step)] or [md]
-
-
-def chunk_count(md: str, size: int = 1024) -> int:
-    try:
-        return len(chunk(md, size))
-    except Exception:  # noqa: BLE001
-        return 0
+    pieces = (md[i:i + size * 4] for i in range(0, len(md), step))
+    return [c for c in pieces if c.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +159,8 @@ def analyze(markdown: str, pii_count: int = 0) -> dict:
         "saved_pct": round(100 * saved / toks) if toks else 0,
         "injection": detect_injection(md),
         "pii_count": int(pii_count or 0),
-        # Estimación aritmética (sin chunkear): el chunking real ocurre en /api/chunk;
-        # 960 = size 1024 - overlap 64.
-        "chunks": (max(1, -(-toks // 960)) if toks else 0),
+        # Estimación aritmética (sin chunkear): el chunking real ocurre en /api/chunk.
+        # El divisor es el "paso" efectivo por chunk (size - overlap) con los defaults
+        # de chunk(); es un conteo APROXIMADO, no el de chunk() ni el del .jsonl.
+        "chunks": (max(1, -(-toks // (DEFAULT_SIZE - DEFAULT_OVERLAP))) if toks else 0),
     }

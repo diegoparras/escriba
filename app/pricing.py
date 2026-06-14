@@ -6,6 +6,7 @@ Se cachea unas horas en memoria. El frontend lo usa para calcular el costo y el
 elija qué modelos mostrar. Si OpenRouter no responde, cae a un fallback mínimo.
 """
 import logging
+import threading
 import time
 
 import requests
@@ -15,6 +16,7 @@ log = logging.getLogger("markitdown.pricing")
 _URL = "https://openrouter.ai/api/v1/models"
 _TTL = 6 * 3600  # 6 h
 _cache = {"t": 0.0, "data": None}
+_lock = threading.Lock()
 
 # Modelos mostrados por defecto (ids de OpenRouter; se filtran a los que existan).
 DEFAULTS = [
@@ -53,15 +55,27 @@ def _fetch():
 
 
 def catalog():
-    """Devuelve (lista_modelos, live). live=False si va del fallback/caché viejo."""
+    """Devuelve (lista_modelos, live).
+
+    live=True significa "caché vigente dentro del TTL", no necesariamente un
+    fetch recién hecho: la caché puede tener hasta `_TTL` segundos de antigüedad.
+    live=False indica que se sirve el fallback (o caché viejo) porque el fetch
+    falló o nunca hubo datos.
+    """
     now = time.time()
     if _cache["data"] and (now - _cache["t"] < _TTL):
         return _cache["data"], True
-    try:
-        data = _fetch()
-        if data:
-            _cache["data"], _cache["t"] = data, now
-            return data, True
-    except Exception as e:  # noqa: BLE001
-        log.warning("Precios de OpenRouter no disponibles (%s); uso fallback", e)
+    # Double-checked locking: un solo hilo refresca mientras el resto espera y
+    # luego ve la caché ya recargada (evita fetches duplicados concurrentes).
+    with _lock:
+        now = time.time()
+        if _cache["data"] and (now - _cache["t"] < _TTL):
+            return _cache["data"], True
+        try:
+            data = _fetch()
+            if data:
+                _cache["data"], _cache["t"] = data, now
+                return data, True
+        except Exception as e:  # noqa: BLE001
+            log.warning("Precios de OpenRouter no disponibles (%s); uso fallback", e)
     return (_cache["data"] or _FALLBACK), False

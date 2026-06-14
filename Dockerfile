@@ -1,3 +1,8 @@
+# NOTA (reproducibilidad): la base se referencia por tag, no por digest.
+# Para builds 100% reproducibles, fijar por digest y actualizarlo conscientemente
+# (Dependabot/renovate): FROM python:3.12-slim@sha256:<digest>
+# Hoy se acepta el riesgo de un tag móvil a cambio de recibir parches de seguridad
+# de la base automáticamente en cada rebuild.
 FROM python:3.12-slim
 
 # Versión (la inyecta el CI desde el tag de git).
@@ -8,6 +13,12 @@ ARG APP_VERSION=dev
 # - libmagic1: detección de tipo de archivo
 # - exiftool: metadatos de imágenes
 # - ocrmypdf + tesseract (+ idiomas): OCR de PDFs escaneados e imágenes
+#
+# NOTA (reproducibilidad): los paquetes apt NO están pineados a versión exacta
+# (paquete=versión). Se acepta el riesgo a cambio de recibir parches de seguridad
+# del repo Debian en cada rebuild. Si se necesita un build determinístico, pinear
+# las versiones críticas (ffmpeg, ocrmypdf, tesseract-ocr, pandoc,
+# default-jre-headless) y/o fijar la base por digest (ver arriba).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libmagic1 \

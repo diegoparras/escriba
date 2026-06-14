@@ -1,14 +1,26 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const t = (k, v) => (window.I18N ? I18N.t(k, v) : k);   // atajo i18n
+// Nota del backend: el campo "note" llega como CLAVE estable (p.ej. "noVoice");
+// la traducimos con note.<clave>. Si la clave no existe, mostramos el valor crudo y nunca rompemos.
+function noteText(n) { const k = "note." + n, tr = t(k); return tr === k ? n : tr; }
 
-marked.setOptions({
-  highlight: (code, lang) => {
-    try { return hljs.highlight(code, { language: hljs.getLanguage(lang) ? lang : "plaintext" }).value; }
-    catch { return code; }
-  },
+// Los bloques de código se renderizan sin resaltado de color (a propósito): se quitó
+// highlight.js para no arrastrar una dependencia de CDN extra que, además, nunca se aplicaba.
+const renderMd = (md) => DOMPurify.sanitize(marked.parse(md || ""), {
+  USE_PROFILES: { html: true },
+  FORBID_TAGS: ["style", "form"],
+  ALLOW_DATA_ATTR: false,
 });
-const renderMd = (md) => DOMPurify.sanitize(marked.parse(md || ""));
+// Forzar rel=noopener noreferrer y target=_blank en enlaces (defensa en profundidad).
+if (window.DOMPurify) {
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A" && node.getAttribute("href")) {
+      node.setAttribute("rel", "noopener noreferrer");
+      node.setAttribute("target", "_blank");
+    }
+  });
+}
 
 let CAPS = null;
 const _RICO = 'class="role-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
@@ -30,7 +42,6 @@ $("themeBtn").addEventListener("click", () => {
 
 // ---------- Popovers del header (menú de opciones + recursos) ----------
 function closeMenus() { ["headerMenu", "statsPop"].forEach(id => $(id)?.classList.add("hidden")); }
-const closeHeaderMenu = closeMenus;   // alias usado por openSettings/aboutBtn
 function toggleMenu(id) { const el = $(id); if (!el) return; const wasClosed = el.classList.contains("hidden"); closeMenus(); if (wasClosed) el.classList.remove("hidden"); }
 $("menuBtn")?.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu("headerMenu"); });
 $("statsChip")?.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu("statsPop"); });
@@ -48,8 +59,10 @@ function toast(msg, kind) {
 
 // ---------- Sesión / login ----------
 async function loadMe() {
-  const me = await (await fetch("/api/me")).json();
-  if (me.authenticated) onAuthed(me); else showLogin();
+  try {
+    const me = await (await fetch("/api/me")).json();
+    if (me.authenticated) onAuthed(me); else showLogin();
+  } catch { showLogin(); }   // respuesta no-JSON o red caída: degradar a login
 }
 function showLogin() {
   $("overlay").classList.remove("hidden");
@@ -67,7 +80,7 @@ async function doLogin() {
     if (!res.ok) throw new Error(data.detail || "Error");
     $("loginPass").value = "";
     onAuthed(data);
-    toast(t("toast.welcome", { label: data.label }), "ok");
+    toast(t("toast.welcome", { label: data.label || data.role || "" }), "ok");
   } catch (e) { toast(e.message, "err"); }
   finally { $("loginBtn").disabled = false; }
 }
@@ -175,16 +188,17 @@ function startStats() {
       const r = await fetch("/api/stats"); if (!r.ok) return;
       const s = await r.json();
       $("stConv").textContent = s.conversions ?? "—";
-      if (CAPS.stats === "full" && s.cpu_percent !== undefined) {
-        $("stCpu").textContent = s.cpu_percent.toFixed(0) + "%";
-        $("stCpuBar").style.width = Math.min(100, s.cpu_percent) + "%";
+      if (CAPS.stats === "full" && typeof s.cpu_percent === "number") {
+        const cpu = Number(s.cpu_percent) || 0, ram = Number(s.ram_percent) || 0;
+        $("stCpu").textContent = cpu.toFixed(0) + "%";
+        $("stCpuBar").style.width = Math.min(100, cpu) + "%";
         $("stRam").textContent = s.ram_used_gb + "/" + s.ram_total_gb + "G";
-        $("stRamBar").style.width = s.ram_percent + "%";
+        $("stRamBar").style.width = ram + "%";
         $("stCores").textContent = s.cores;
         // chip colapsado: un puntito de color por recurso (CPU y RAM) según uso
         const lvl = (p, w, c) => "status-dot" + (p >= c ? " crit" : (p >= w ? " warn" : ""));
-        if ($("cpuDot")) $("cpuDot").className = lvl(s.cpu_percent, 70, 90);
-        if ($("ramDot")) $("ramDot").className = lvl(s.ram_percent, 65, 85);
+        if ($("cpuDot")) $("cpuDot").className = lvl(cpu, 70, 90);
+        if ($("ramDot")) $("ramDot").className = lvl(ram, 65, 85);
       } else {
         ["stCpu","stRam","stCores"].forEach(id => $(id).closest(".stat").classList.add("hidden"));
       }
@@ -229,7 +243,9 @@ function fileChip(name, isUrl) {
   return `<span class="ftype" style="background:${color}">${(ext || "doc").slice(0, 4).toUpperCase()}</span>`;
 }
 const humanSize = (b) => b < 1024 ? b + " B" : b < 1048576 ? (b/1024).toFixed(1) + " KB" : (b/1048576).toFixed(1) + " MB";
-const baseName = (n) => (n || "resultado").split(/[\\/]/).pop().replace(/\.[^.]+$/, "") || "resultado";
+const DEFAULT_NAME = () => t("res.fallbackName");
+const stripPath = (n) => (n || "").split(/[\\/]/).pop();
+const baseName = (n) => stripPath(n || DEFAULT_NAME()).replace(/\.[^.]+$/, "") || DEFAULT_NAME();
 
 function addFile(file) {
   if (CAPS.maxBatch && items.size >= CAPS.maxBatch) { toast(t("toast.batch", { n: CAPS.maxBatch }), "err"); return; }
@@ -271,7 +287,7 @@ function updateItemNode(it, root) {
   if (it.status === "done") {
     if (cb) cb.remove();
   } else if (!cb) {
-    top.insertAdjacentHTML("afterbegin", `<input type="checkbox" class="sel" ${it.selected !== false ? "checked" : ""} title="Seleccionar" />`);
+    top.insertAdjacentHTML("afterbegin", `<input type="checkbox" class="sel" ${it.selected !== false ? "checked" : ""} title="${escapeHtml(t("queue.selectOne"))}" aria-label="${escapeHtml(t("queue.selectOne"))}" />`);
     const ncb = top.querySelector(".sel");
     ncb.addEventListener("click", e => e.stopPropagation());
     ncb.addEventListener("change", () => { it.selected = ncb.checked; updateSelUI(); });
@@ -310,9 +326,11 @@ function render() {
   if (items.size === 0) { q.innerHTML = ""; updateZipBtn(); return; }
 
   const qhead = ensureQhead(q);
-  const selCount = [...items.values()].filter(i => i.selected !== false).length;
+  // El "Seleccionar todo" solo gobierna ítems con checkbox (los que aún no están done).
+  const selectable = [...items.values()].filter(i => i.status !== "done");
+  const selCount = selectable.filter(i => i.selected !== false).length;
   qhead.querySelector("h3").textContent = t("queue.title", { n: items.size });
-  qhead.querySelector("#selAll").checked = selCount === items.size;
+  qhead.querySelector("#selAll").checked = selectable.length > 0 && selCount === selectable.length;
 
   // Crear/actualizar cada ítem por clave (id), conservando el DOM existente.
   items.forEach(it => {
@@ -327,7 +345,12 @@ function render() {
       const cb = root.querySelector(".sel");
       if (cb) { cb.addEventListener("click", e => e.stopPropagation()); cb.addEventListener("change", () => { it.selected = cb.checked; updateSelUI(); }); }
       const x = root.querySelector(".x");
-      if (x) x.addEventListener("click", () => { items.delete(it.id); render(); updateZipBtn(); });
+      if (x) x.addEventListener("click", () => {
+        // Si el ítem se está convirtiendo, abortar el XHR y limpiar el timer para no dejar
+        // recursos vivos ni un resolve() pendiente que reactive el render.
+        if (it.status === "converting" && it._xhr) { it._aborted = true; try { it._xhr.abort(); } catch {} }
+        items.delete(it.id); render(); updateZipBtn();
+      });
     } else {
       updateItemNode(it, root);
     }
@@ -358,13 +381,15 @@ function render() {
 }
 function updateSelUI() {
   const all = [...items.values()];
-  const sel = all.filter(i => i.selected !== false).length;
+  // El "Seleccionar todo" solo aplica a ítems con checkbox (no done).
+  const selectable = all.filter(i => i.status !== "done");
+  const sel = selectable.filter(i => i.selected !== false).length;
   // Solo se puede convertir lo que está pendiente (en cola o con error) y seleccionado.
   const pending = all.filter(i => i.selected !== false && (i.status === "queued" || i.status === "error")).length;
   const cv = $("convertBtn");
   if (cv) { cv.textContent = pending ? t("queue.convertSel", { n: pending }) : t("act.convertAll"); cv.disabled = converting || pending === 0; }
   const cnt = $("abCount"); if (cnt) cnt.textContent = t("queue.title", { n: items.size });
-  const a = $("selAll"); if (a) a.checked = items.size > 0 && sel === items.size;
+  const a = $("selAll"); if (a) a.checked = selectable.length > 0 && sel === selectable.length;
 }
 
 function pdfTypeI18n(tp) {
@@ -382,9 +407,10 @@ function pdfBadge(r) {
 function itemSub(it) {
   let sub;
   if (it.status === "done" && it.result) {
-    sub = t("sub.stats", { w: it.result.words.toLocaleString(), c: it.result.chars.toLocaleString(), ms: it.result.elapsed_ms, min: Math.max(1, Math.round(it.result.words / 200)) }) + pdfBadge(it.result);
+    const w = it.result.words || 0, c = it.result.chars || 0;
+    sub = t("sub.stats", { w: w.toLocaleString(), c: c.toLocaleString(), ms: it.result.elapsed_ms, min: Math.max(1, Math.round(w / 200)) }) + pdfBadge(it.result);
     if (it.result.anonymized) sub += ` · ${t("sub.anon", { n: it.result.pii_count ?? 0 })}`;
-    if (it.result.note) sub += ` · ⚠️ ${it.result.note}`;
+    if (it.result.note) sub += ` · ⚠️ ${noteText(it.result.note)}`;
   } else if (it.status === "error") sub = it.error;
   else sub = it.isUrl ? t("sub.url") : humanSize(it.size);
   return sub;
@@ -398,7 +424,7 @@ function itemHtml(it) {
   const pbar = it.status === "converting"
     ? `<div class="pbar"><span id="pb${it.id}" style="width:${it.progress}%"></span></div>` : "";
   const checkbox = it.status === "done"
-    ? "" : `<input type="checkbox" class="sel" ${it.selected !== false ? "checked" : ""} title="Seleccionar" />`;
+    ? "" : `<input type="checkbox" class="sel" ${it.selected !== false ? "checked" : ""} title="${escapeHtml(t("queue.selectOne"))}" aria-label="${escapeHtml(t("queue.selectOne"))}" />`;
   return `
     <div class="item" id="it${it.id}">
       <div class="item-top">
@@ -406,7 +432,7 @@ function itemHtml(it) {
         ${fileChip(it.name, it.isUrl)}
         <div class="meta"><div class="name">${escapeHtml(it.name)}</div><div class="small">${escapeHtml(sub)}</div></div>
         <span class="chip ${it.status}" id="chip${it.id}">${chip}</span>
-        <span class="x" title="Quitar">✕</span>
+        <button type="button" class="x" title="${escapeHtml(t("act.remove"))}" aria-label="${escapeHtml(t("act.remove"))}">✕</button>
       </div>
       ${pbar}
       <div class="item-body"></div>
@@ -487,7 +513,7 @@ function doDownload(it, value, btn) {
   if (value === "md") return downloadMd(baseName(it.name), it.result.markdown || "");
   if (value === "compact") return downloadProcessed("/api/compact", it, btn, baseName(it.name) + "-compacto.md");
   if (value === "chunks") return downloadProcessed("/api/chunk", it, btn, baseName(it.name) + "-chunks.jsonl");
-  if (value === "redact") return redactItem(it, btn);
+  if (value === "redact") return openRedactLevel(it);
   if (value.startsWith("exp:")) return exportFmt(it, value.slice(4), btn);
 }
 
@@ -525,7 +551,7 @@ function panelModels() {
 }
 function setPanelModels(ids) { try { localStorage.setItem(PANEL_STORE, JSON.stringify(ids)); } catch {} }
 const ctxLabel = (n) => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M" : n >= 1000 ? Math.round(n / 1000) + "K" : "" + n;
-const usd = (v) => v <= 0 ? "gratis" : v < 0.01 ? "$" + v.toFixed(4) : v < 1 ? "$" + v.toFixed(3) : "$" + v.toFixed(2);
+const usd = (v) => v <= 0 ? t("llm.free") : v < 0.01 ? "$" + v.toFixed(4) : v < 1 ? "$" + v.toFixed(3) : "$" + v.toFixed(2);
 
 // ---------- Panel LLM: render + interacción ----------
 function mountPanel(wrap, it) {
@@ -533,11 +559,12 @@ function mountPanel(wrap, it) {
   const nf = (n) => (n || 0).toLocaleString();
   const sel = panelModels();
   const rows = sel.map(id => {
-    const m = MODELS_BY_ID[id]; if (!m) return "";
-    const cost = d.tokens / 1e6 * m.in, ok = d.tokens <= m.ctx;
+    const m = MODELS_BY_ID[id]; if (!m || !m.ctx) return "";
+    const hasPrice = m.in != null;
+    const cost = hasPrice ? d.tokens / 1e6 * m.in : null, ok = d.tokens <= m.ctx;
     return `<tr>
       <td class="lm-name" title="${escapeHtml(m.id)}">${escapeHtml(m.name)}</td>
-      <td class="lm-cost">~${usd(cost)}</td>
+      <td class="lm-cost">${hasPrice ? "~" + usd(cost) : "—"}</td>
       <td><span class="llm-fit ${ok ? "ok" : "no"}">${ok ? IC_CHK : IC_X}${ctxLabel(m.ctx)}</span></td>
       <td><button class="lm-rm" data-id="${escapeHtml(id)}" title="${t("llm.remove")}">${IC_X}</button></td>
     </tr>`;
@@ -555,7 +582,7 @@ function mountPanel(wrap, it) {
     ? `<div class="llm-warn">${IC_WARN}<div><b>${t("llm.injection")}</b> ${d.injection.map(x => escapeHtml(x.why)).join(" · ")}</div></div>` : "";
   wrap.innerHTML = `<div class="llm-panel">
     <div class="llm-head">
-      <div class="llm-tok"><b>${nf(d.tokens)}</b> tokens</div>
+      <div class="llm-tok"><b>${nf(d.tokens)}</b> ${t("llm.tokens")}</div>
       <span class="llm-sub">${subParts.join(" · ")}</span>
     </div>
     <table class="llm-tbl"><thead><tr><th>${t("llm.model")}</th><th>${t("llm.cost")}</th><th>${t("llm.context")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
@@ -588,12 +615,14 @@ async function downloadProcessed(url, it, btn, filename) {
 }
 
 // Censura visual: re-envía el archivo original y baja el PDF tachado.
-let _redactStrict = "balanceado";
+// Niveles de intensidad de anonimización que acepta el backend (anon_strict).
+const REDACT_LEVELS = { default: "balanceado", strict: "estricto" };
+let _redactStrict = REDACT_LEVELS.default;
 function redactFormData(it, preview, strict) {
   const fd = new FormData();
   fd.append("file", it.file);
   const lang = $("lang")?.value; if (lang) fd.append("lang", lang);
-  fd.append("anon_strict", strict || _redactStrict || "balanceado");
+  fd.append("anon_strict", strict || _redactStrict || REDACT_LEVELS.default);
   fd.append("anon_detectors", getEnabledDetectors().join(","));
   const rules = getAnonRules(); if (rules) fd.append("anon_rules", rules);
   if (preview) fd.append("preview", "1");
@@ -601,12 +630,11 @@ function redactFormData(it, preview, strict) {
 }
 
 // Paso 1: elegir el NIVEL de censura.
-function redactItem(it) { openRedactLevel(it); }
 function openRedactLevel(it) {
   const cards = document.querySelectorAll("#redactLevelModal .rl-card");
   cards.forEach(c => { c.classList.toggle("rl-on", c.dataset.level === _redactStrict); c.onclick = () => { cards.forEach(x => x.classList.remove("rl-on")); c.classList.add("rl-on"); }; });
   $("rlGo").onclick = () => {
-    const lvl = document.querySelector("#redactLevelModal .rl-card.rl-on")?.dataset.level || "balanceado";
+    const lvl = document.querySelector("#redactLevelModal .rl-card.rl-on")?.dataset.level || REDACT_LEVELS.default;
     closeModal("redactLevelModal");
     runRedactPreview(it, lvl);
   };
@@ -624,7 +652,9 @@ async function runRedactPreview(it, strict) {
   } catch (e) { toast(e.message, "err"); }
 }
 
-const REDACT_TYPES = { PERSONA: "Nombre", DOMICILIO: "Domicilio", EMAIL: "Email", TEL: "Teléfono", ID: "ID/CUIT/DNI", FECHA: "Fecha", URL: "URL", SECRETO: "Secreto", DATO: "Dato" };
+// Tipo de PII → clave i18n (redact.type.*); se resuelve con t() en openRedactPreview.
+const REDACT_TYPES = { PERSONA: "redact.type.persona", DOMICILIO: "redact.type.domicilio", EMAIL: "redact.type.email", TEL: "redact.type.tel", ID: "redact.type.id", FECHA: "redact.type.fecha", URL: "redact.type.url", SECRETO: "redact.type.secreto", DATO: "redact.type.dato" };
+function redactTypeLabel(type) { const k = REDACT_TYPES[type]; return k ? t(k) : type; }
 function openRedactPreview(it, d) {
   const ents = d.entities || [];
   $("rpStrict").textContent = d.strict ? t("anon.strict") : t("anon.balanced");
@@ -637,7 +667,7 @@ function openRedactPreview(it, d) {
   } else {
     body.innerHTML = ents.map(e =>
       `<label class="rp-row"><input type="checkbox" class="rp-chk" data-text="${escapeHtml(e.text)}" checked style="width:auto" />` +
-      `<span class="rp-type">${escapeHtml(REDACT_TYPES[e.type] || e.type)}</span>` +
+      `<span class="rp-type">${escapeHtml(redactTypeLabel(e.type))}</span>` +
       `<span class="rp-text">${escapeHtml(e.text)}</span>` +
       `${e.count > 1 ? `<span class="rp-cnt">×${e.count}</span>` : ""}</label>`).join("");
   }
@@ -678,20 +708,61 @@ async function confirmRedact(it, only) {
 }
 
 // ---------- Modales ----------
-function openModal(id) { $(id).classList.remove("hidden"); }
-function closeModal(id) { $(id).classList.add("hidden"); }
+const _modalState = new Map();   // id -> { prevFocus, onKeydown }
+function _focusables(root) {
+  return Array.from(root.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetParent !== null || el === document.activeElement);
+}
+function openModal(id) {
+  const el = $(id); if (!el) return;
+  el.classList.remove("hidden");
+  if (_modalState.has(id)) return;
+  const prevFocus = document.activeElement;
+  el.setAttribute("tabindex", "-1");
+  // Mover el foco al primer control enfocable, o al propio modal.
+  const f = _focusables(el);
+  (f[0] || el).focus();
+  // Focus trap sobre Tab dentro del modal.
+  const onKeydown = (e) => {
+    if (e.key !== "Tab") return;
+    const items = _focusables(el);
+    if (!items.length) { e.preventDefault(); el.focus(); return; }
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  el.addEventListener("keydown", onKeydown);
+  _modalState.set(id, { prevFocus, onKeydown });
+}
+function closeModal(id) {
+  const el = $(id); if (!el) return;
+  el.classList.add("hidden");
+  const st = _modalState.get(id);
+  if (st) {
+    el.removeEventListener("keydown", st.onKeydown);
+    _modalState.delete(id);
+    if (st.prevFocus && typeof st.prevFocus.focus === "function") st.prevFocus.focus();
+  }
+}
 function openResultModal(it) {
-  $("rmTitle").textContent = (it.name || "Resultado").split(/[\\/]/).pop();
+  $("rmTitle").textContent = stripPath(it.name || DEFAULT_NAME());
   $("rmBody").innerHTML = renderMd(it.result.markdown);
   $("rmCopy").onclick = async () => { await navigator.clipboard.writeText(it.result.markdown || ""); toast(t("toast.copied"), "ok"); };
   $("rmDl").onclick = () => downloadMd(baseName(it.name), it.result.markdown || "");
   openModal("resultModal");
 }
 document.querySelectorAll(".modal-backdrop").forEach(bd => {
-  bd.addEventListener("click", (e) => { if (e.target === bd || e.target.closest(".modal-close")) bd.classList.add("hidden"); });
+  bd.addEventListener("click", (e) => {
+    if (e.target === bd || e.target.closest(".modal-close") || e.target.closest("[data-close]")) {
+      if (bd.id) closeModal(bd.id); else bd.classList.add("hidden");
+    }
+  });
 });
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") document.querySelectorAll(".modal-backdrop:not(.hidden)").forEach(m => m.classList.add("hidden"));
+  if (e.key === "Escape") document.querySelectorAll(".modal-backdrop:not(.hidden)").forEach(m => {
+    if (m.id) closeModal(m.id); else m.classList.add("hidden");
+  });
 });
 
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
@@ -704,8 +775,13 @@ const IC_X = '<svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentC
 const IC_WARN = '<svg class="ic-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
 const esNorm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 function esCloseAll(except) {
-  document.querySelectorAll(".es-wrap.open").forEach(w => { if (w !== except) { w.classList.remove("open"); w.querySelector(".es-pop")?.classList.add("hidden"); } });
+  document.querySelectorAll(".es-wrap.open").forEach(w => {
+    if (w === except) return;
+    if (w._esClose) w._esClose();
+    else { w.classList.remove("open"); w.querySelector(".es-pop")?.classList.add("hidden"); }
+  });
 }
+let _esSeq = 0;
 function esEnhanceAll(root) { (root || document).querySelectorAll("select:not([data-es])").forEach(esEnhance); }
 function esEnhance(sel) {
   sel.dataset.es = "1";
@@ -714,14 +790,22 @@ function esEnhance(sel) {
   wrap.className = "es-wrap" + (inline ? " es-inline" : "");
   sel.parentNode.insertBefore(wrap, sel);
   wrap.appendChild(sel); sel.classList.add("es-native");
+  const popId = "es-pop-" + (++_esSeq);
   const trigger = document.createElement("button");
   trigger.type = "button"; trigger.className = "es-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-controls", popId);
+  // Copiar el nombre accesible del control nativo al trigger, si lo hubiera.
+  if (sel.getAttribute("aria-label")) trigger.setAttribute("aria-label", sel.getAttribute("aria-label"));
+  else if (sel.getAttribute("aria-labelledby")) trigger.setAttribute("aria-labelledby", sel.getAttribute("aria-labelledby"));
   trigger.innerHTML = `<span class="es-val"></span>${ES_CHEV}`;
   const pop = document.createElement("div");
-  pop.className = "es-pop hidden"; pop.setAttribute("role", "listbox");
+  pop.className = "es-pop hidden"; pop.id = popId; pop.setAttribute("role", "listbox");
   wrap.appendChild(trigger); wrap.appendChild(pop);
   const valEl = trigger.querySelector(".es-val");
   let rows = [], active = -1;
+  let typeBuf = "", typeTimer = null;   // type-ahead
 
   const readOpts = () => {
     const out = [];
@@ -745,9 +829,21 @@ function esEnhance(sel) {
   const setActive = (i) => {
     if (rows[active]) rows[active].classList.remove("active");
     active = Math.max(0, Math.min(i, rows.length - 1));
-    if (rows[active]) { rows[active].classList.add("active"); rows[active].scrollIntoView({ block: "nearest" }); }
+    if (rows[active]) {
+      rows[active].classList.add("active"); rows[active].scrollIntoView({ block: "nearest" });
+      pop.setAttribute("aria-activedescendant", rows[active].id);
+    } else {
+      pop.removeAttribute("aria-activedescendant");
+    }
   };
-  const choose = (v) => { sel.value = v; sel.dispatchEvent(new Event("change", { bubbles: true })); syncTrigger(); close(); };
+  const choose = (v) => { sel.value = v; sel.dispatchEvent(new Event("change", { bubbles: true })); syncTrigger(); close(); trigger.focus(); };
+  const typeAhead = (ch) => {
+    typeBuf += ch.toLowerCase();
+    if (typeTimer) clearTimeout(typeTimer);
+    typeTimer = setTimeout(() => { typeBuf = ""; }, 600);
+    const idx = rows.findIndex(r => esNorm(r.textContent).startsWith(esNorm(typeBuf)));
+    if (idx >= 0) setActive(idx);
+  };
   function onKey(e) {
     if (e.key === "ArrowDown") { e.preventDefault(); setActive(active + 1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive(active - 1); }
@@ -755,6 +851,7 @@ function esEnhance(sel) {
     else if (e.key === "End") { e.preventDefault(); setActive(rows.length - 1); }
     else if (e.key === "Enter") { e.preventDefault(); if (rows[active]) rows[active].click(); }
     else if (e.key === "Escape") { e.preventDefault(); close(); trigger.focus(); }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { typeAhead(e.key); }
   }
   const render = () => {
     const opts = readOpts();
@@ -777,7 +874,9 @@ function esEnhance(sel) {
         if (o.g && o.g !== lastG) { const g = document.createElement("div"); g.className = "es-group"; g.textContent = o.g; list.appendChild(g); lastG = o.g; }
         const row = document.createElement("div");
         row.className = "es-opt" + (o.v === sel.value ? " es-sel" : "");
+        row.id = popId + "-opt-" + shown;
         row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", o.v === sel.value ? "true" : "false");
         const parts = o.t.split(" · ");
         row.innerHTML = `<span class="es-label">${escapeHtml(parts[0])}</span>${parts.length > 1 ? `<span class="es-badge">${escapeHtml(parts.slice(1).join(" · "))}</span>` : ""}${ES_CHECK}`;
         row.addEventListener("click", () => choose(o.v));
@@ -790,18 +889,34 @@ function esEnhance(sel) {
   };
   const open = () => {
     render(); pop.classList.remove("hidden"); wrap.classList.add("open"); esCloseAll(wrap);
-    active = rows.findIndex(r => r.classList.contains("es-sel"));
+    trigger.setAttribute("aria-expanded", "true");
+    const selIdx = rows.findIndex(r => r.classList.contains("es-sel"));
+    setActive(selIdx < 0 ? 0 : selIdx);
   };
-  const close = () => { wrap.classList.remove("open"); pop.classList.add("hidden"); };
+  const close = () => {
+    wrap.classList.remove("open"); pop.classList.add("hidden");
+    trigger.setAttribute("aria-expanded", "false");
+    pop.removeAttribute("aria-activedescendant");
+  };
+  wrap._esClose = close; wrap._esTrigger = trigger;
   trigger.addEventListener("click", (e) => { e.stopPropagation(); wrap.classList.contains("open") ? close() : open(); });
   trigger.addEventListener("keydown", (e) => {
-    if (!wrap.classList.contains("open")) { if (["ArrowDown", "Enter", " "].includes(e.key)) { e.preventDefault(); open(); setActive(0); } }
+    if (!wrap.classList.contains("open")) { if (["ArrowDown", "Enter", " "].includes(e.key)) { e.preventDefault(); open(); } }
     else onKey(e);
   });
 }
-document.addEventListener("click", (e) => { if (!e.target.closest(".es-wrap")) esCloseAll(); });
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".es-wrap")) {
+    // Si el foco quedó dentro de un pop que cerramos por click afuera, devolverlo al trigger.
+    document.querySelectorAll(".es-wrap.open").forEach(w => {
+      const focusInside = w.contains(document.activeElement);
+      w._esClose ? w._esClose() : (w.classList.remove("open"), w.querySelector(".es-pop")?.classList.add("hidden"));
+      if (focusInside && w._esTrigger) w._esTrigger.focus();
+    });
+  }
+});
 async function errFromRes(res){ let m = "Error " + res.status; try { m = (await res.json()).detail || m; } catch {} return m; }
-function triggerDownload(blob, filename){ const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
+function triggerDownload(blob, filename){ const a = document.createElement("a"); const url = URL.createObjectURL(blob); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
 function downloadMd(name, md) {
   const blob = new Blob([md], { type: "text/markdown" });
   triggerDownload(blob, name + ".md");
@@ -821,7 +936,7 @@ function convertOne(it) {
       const am = $("anonMode")?.value;
       if (am && am !== "off") {
         fd.append("anonymize", am);
-        fd.append("anon_strict", $("anonStrict")?.value || "balanceado");
+        fd.append("anon_strict", $("anonStrict")?.value || REDACT_LEVELS.default);
         fd.append("anon_detectors", getEnabledDetectors().join(","));
         const rules = getAnonRules(); if (rules) fd.append("anon_rules", rules);
       }
@@ -842,6 +957,7 @@ function convertOne(it) {
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/convert");
+    it._xhr = xhr;
     let procTimer = null;
 
     // Fase 1: subida real (0–45%)
@@ -854,19 +970,30 @@ function convertOne(it) {
       procTimer = setInterval(() => {
         if (it.progress < 92) { it.progress += Math.max(0.4, (92 - it.progress) * 0.06); updateProgressDom(it); }
       }, 250);
+      it._procTimer = procTimer;
     };
-    const finish = () => { if (procTimer) clearInterval(procTimer); };
+    const finish = () => { if (procTimer) { clearInterval(procTimer); procTimer = null; } it._procTimer = null; it._xhr = null; };
+    // El ítem fue borrado con la X: no tocar estado ni re-renderizar.
+    const settleAborted = () => { finish(); resolve(); };
 
     xhr.onload = () => {
       finish();
-      try {
-        const data = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300) { it.progress = 100; updateProgressDom(it); it.result = data; it.status = "done"; collectPseudoMap(data); }
-        else { it.status = "error"; it.error = data.detail || `Error ${xhr.status}`; }
-      } catch { it.status = "error"; it.error = `Error ${xhr.status}`; }
+      if (it._aborted) return resolve();
+      // Parsear primero: un 2xx con cuerpo no-JSON NO debe perder silenciosamente el resultado.
+      let data = null, parseErr = false;
+      try { data = JSON.parse(xhr.responseText); } catch { parseErr = true; }
+      if (xhr.status >= 200 && xhr.status < 300 && !parseErr) {
+        it.progress = 100; updateProgressDom(it); it.result = data; it.status = "done";
+        try { collectPseudoMap(data); } catch {}
+      } else {
+        it.status = "error";
+        it.error = (data && data.detail) || (parseErr ? t("toast.netErr") : `Error ${xhr.status}`);
+      }
       render(); resolve();
     };
-    xhr.onerror = () => { finish(); it.status = "error"; it.error = "Error de red"; render(); resolve(); };
+    xhr.onerror = () => { finish(); if (it._aborted) return resolve(); it.status = "error"; it.error = t("toast.netErr"); render(); resolve(); };
+    xhr.ontimeout = () => { finish(); if (it._aborted) return resolve(); it.status = "error"; it.error = t("toast.netErr"); render(); resolve(); };
+    xhr.onabort = settleAborted;
     xhr.send(fd);
   });
 }
@@ -876,7 +1003,12 @@ async function convertAll(onlySelected = false) {
   if (pending.length === 0) { toast(onlySelected ? t("toast.noSel") : t("toast.noQueue"), "err"); return; }
   converting = true; $("convertBtn").disabled = true;
   pending.forEach(it => { it.status = "queued"; it.progress = 0; }); render();
-  await Promise.all(pending.map(convertOne));
+  // Pool de concurrencia: no disparar TODA la cola en paralelo (limita carga server/red).
+  const POOL = 3;
+  const queue = pending.slice();
+  while (queue.length) {
+    await Promise.all(queue.splice(0, POOL).map(convertOne));
+  }
   converting = false; updateSelUI();   // re-evalúa: si no queda nada pendiente, queda deshabilitado
   const ok = [...items.values()].filter(it => it.status === "done").length;
   const bad = [...items.values()].filter(it => it.status === "error").length;
@@ -894,7 +1026,7 @@ async function downloadZip() {
   const zip = new JSZip(); const used = {};
   done.forEach(it => { let n = baseName(it.name); if (used[n]) n += "-" + (++used[n]); else used[n] = 1; zip.file(n + ".md", it.result.markdown || ""); });
   const blob = await zip.generateAsync({ type: "blob" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "markitdown.zip"; a.click(); URL.revokeObjectURL(a.href);
+  triggerDownload(blob, "markitdown.zip");
   toast(t("toast.zip"), "ok");
 }
 
@@ -915,7 +1047,7 @@ window.addEventListener("paste", e => {
 });
 $("convertBtn").addEventListener("click", () => convertAll(true));
 $("zipBtn").addEventListener("click", downloadZip);
-$("clearBtn").addEventListener("click", () => { items.clear(); render(); });
+$("clearBtn").addEventListener("click", () => { items.clear(); PSEUDO_MAP = {}; $("rehydrateBtn")?.classList.add("hidden"); render(); });
 // Mostrar el selector de intensidad solo cuando hay un modo de anonimización activo.
 $("anonMode")?.addEventListener("change", () => {
   $("anonStrict")?.classList.toggle("hidden", $("anonMode").value === "off");
@@ -930,10 +1062,11 @@ function collectPseudoMap(data) {
     $("rehydrateBtn")?.classList.remove("hidden");
   }
 }
+// Re-hidrata en UN solo pase con una regex de alternancia («TIPO_N»), evitando colisiones
+// cuando un token es substring de otro y la reinyección O(tokens × longitud).
 function rehydrate(text) {
-  const tokens = Object.keys(PSEUDO_MAP).sort((a, b) => b.length - a.length);
-  for (const tok of tokens) text = text.split(tok).join(PSEUDO_MAP[tok]);
-  return text;
+  if (!Object.keys(PSEUDO_MAP).length) return text;
+  return text.replace(/«[A-Z]+_\d+»/g, (m) => (m in PSEUDO_MAP ? String(PSEUDO_MAP[m]) : m));
 }
 $("rehydrateBtn")?.addEventListener("click", () => {
   openModal("rehydrateModal");
@@ -1016,14 +1149,18 @@ window.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key 
 const confettiCv = $("confetti"), confettiCx = confettiCv.getContext("2d");
 function resize() { confettiCv.width = innerWidth; confettiCv.height = innerHeight; }
 resize(); window.addEventListener("resize", resize);
+let _confettiRAF = null;
 function celebrate() {
+  // Cancelar cualquier loop previo para no apilar rAF sobre el mismo canvas en conversiones seguidas.
+  if (_confettiRAF) cancelAnimationFrame(_confettiRAF);
   const N = 140, parts = [], colors = ["#f0a98c","#e98e6f","#f5ece4","#e08a66","#ffd2bf"];
   for (let i = 0; i < N; i++) parts.push({ x: innerWidth/2, y: innerHeight/3, vx: (Math.random()-.5)*14, vy: Math.random()*-12-4, g: .35, s: Math.random()*6+4, c: colors[i%colors.length], r: Math.random()*Math.PI, vr: (Math.random()-.5)*.3 });
   let frames = 0;
   (function loop() {
     confettiCx.clearRect(0,0,confettiCv.width,confettiCv.height);
     parts.forEach(p => { p.vy += p.g; p.x += p.vx; p.y += p.vy; p.r += p.vr; confettiCx.save(); confettiCx.translate(p.x,p.y); confettiCx.rotate(p.r); confettiCx.fillStyle = p.c; confettiCx.fillRect(-p.s/2,-p.s/2,p.s,p.s*1.6); confettiCx.restore(); });
-    if (frames++ < 130) requestAnimationFrame(loop); else confettiCx.clearRect(0,0,confettiCv.width,confettiCv.height);
+    if (frames++ < 130) { _confettiRAF = requestAnimationFrame(loop); }
+    else { _confettiRAF = null; confettiCx.clearRect(0,0,confettiCv.width,confettiCv.height); }
   })();
 }
 
@@ -1084,9 +1221,9 @@ $("rememberKey").addEventListener("change", persistApiKey);
 
 // ---------- Triggers de modales + header sticky ----------
 $("formatsBtn").addEventListener("click", (e) => { e.stopPropagation(); openModal("formatsModal"); });
-$("aboutBtn").addEventListener("click", () => { closeHeaderMenu(); openModal("aboutModal"); });
+$("aboutBtn").addEventListener("click", () => { closeMenus(); openModal("aboutModal"); });
 function openSettings(tab) {
-  closeHeaderMenu();
+  closeMenus();
   openModal("settingsModal"); ytckShown = false; applyYtckMask();
   if (tab) document.querySelector(`#settingsTabs .tab[data-stab="${tab}"]`)?.click();
 }

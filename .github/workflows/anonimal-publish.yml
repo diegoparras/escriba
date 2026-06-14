@@ -37,7 +37,7 @@ jobs:
       # runner de GitHub trae poco disco libre → liberamos espacio antes (saca
       # toolchains preinstalados: .NET, Android, GHC, etc., ~30 GB).
       - name: Liberar espacio en disco
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: true
           android: true

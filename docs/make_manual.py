@@ -31,12 +31,13 @@ def reg_ttf(name, candidates, subfont=0):
             try:
                 pdfmetrics.registerFont(TTFont(name, path, subfontIndex=subfont))
                 return True
-            except Exception:
+            except Exception as e:
+                print("[warn] could not register font %s from %s: %s" % (name, path, e))
                 continue
     return False
 
 
-WIN = r"C:\Windows\Fonts"
+WIN = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 NOTO = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"]
 zh_ok = reg_ttf("ZH", [os.path.join(WIN, "msyh.ttc"), os.path.join(WIN, "simsun.ttc")] + NOTO)
@@ -873,10 +874,15 @@ def on_cover(canvas, doc):
     canvas.restoreState()
 
 
-for lang in TR:
-    out = os.path.join(HERE, OUT[lang])
-    doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm,
-                            topMargin=1.6 * cm, bottomMargin=1.6 * cm,
-                            title="Escriba — Manual", author="Diego Parrás")
-    doc.build(build(lang), onFirstPage=on_cover, onLaterPages=on_page)
-    print("PDF:", out)
+def main():
+    for lang in TR:
+        out = os.path.join(HERE, OUT[lang])
+        doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm,
+                                topMargin=1.6 * cm, bottomMargin=1.6 * cm,
+                                title="Escriba — Manual", author="Diego Parrás")
+        doc.build(build(lang), onFirstPage=on_cover, onLaterPages=on_page)
+        print("PDF:", out)
+
+
+if __name__ == "__main__":
+    main()

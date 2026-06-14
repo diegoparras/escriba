@@ -34,8 +34,15 @@ def extract_markdown(pdf_path: str) -> str:
     import opendataloader_pdf as odl
     out = tempfile.mkdtemp(prefix="odl_")
     try:
-        # content_safety (anti prompt-injection) queda ACTIVO por defecto.
-        odl.convert(input_path=pdf_path, output_dir=out, format="markdown", quiet=True)
+        # content_safety (anti prompt-injection) se pasa EXPLÍCITO, sin depender
+        # del default de la librería, ya que el PDF es contenido no confiable.
+        odl.convert(
+            input_path=pdf_path,
+            output_dir=out,
+            format="markdown",
+            quiet=True,
+            content_safety=True,
+        )
         mds = sorted(glob.glob(os.path.join(out, "**", "*.md"), recursive=True))
         if not mds:
             raise ODLError("OpenDataLoader no generó Markdown.")
@@ -50,4 +57,24 @@ def extract_markdown(pdf_path: str) -> str:
         log.warning("OpenDataLoader falló: %s", e)
         raise ODLError("La extracción avanzada falló.") from e
     finally:
-        shutil.rmtree(out, ignore_errors=True)
+        _cleanup_dir(out)
+
+
+def _cleanup_dir(path: str) -> None:
+    """Borra un tempdir de ODL; loguea (sin propagar) si la limpieza falla."""
+    def _onerror(_func, errpath, exc_info):
+        log.warning("No se pudo limpiar el tempdir ODL %s: %s", errpath, exc_info[1])
+
+    try:
+        shutil.rmtree(path, onerror=_onerror)
+    except Exception as e:  # noqa: BLE001
+        log.warning("No se pudo limpiar el tempdir ODL %s: %s", path, e)
+
+
+def cleanup_orphans() -> None:
+    """Borra tempdirs 'odl_*' huérfanos que hayan quedado de corridas previas
+    (p.ej. tras un crash). Seguro de llamar al arranque del proceso."""
+    pattern = os.path.join(tempfile.gettempdir(), "odl_*")
+    for orphan in glob.glob(pattern):
+        if os.path.isdir(orphan):
+            _cleanup_dir(orphan)

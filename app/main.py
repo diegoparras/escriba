@@ -19,10 +19,11 @@ import tempfile
 import time
 import unicodedata
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import psutil
 import requests
@@ -58,7 +59,13 @@ SCANNED_THRESHOLD = int(os.getenv("SCANNED_THRESHOLD", "30"))
 MAX_MEDIA_MINUTES = int(os.getenv("MAX_MEDIA_MINUTES", "120"))
 
 # Versión (la inyecta el build desde el tag de git; "dev" en local).
+# Se inyecta crudo en el HTML (reemplazo de __VER__), así que validamos el
+# formato (alfanumérico + .-_) para no permitir inyección si el tag viniera sucio.
 APP_VERSION = os.getenv("APP_VERSION", "dev")
+if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", APP_VERSION or ""):
+    log = logging.getLogger("markitdown.web")
+    log.warning("APP_VERSION con formato inesperado (%r); usando 'dev'.", APP_VERSION)
+    APP_VERSION = "dev"
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("markitdown.web")
@@ -71,6 +78,24 @@ MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "100"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() in ("1", "true", "yes")
 
+# Tope de tamaño para el texto que reciben export/compact/chunk (post-conversión).
+# Evita DoS por payloads enormes en esos endpoints (mismo espíritu que MAX_UPLOAD).
+MAX_TEXT_BYTES = int(os.getenv("MAX_TEXT_MB", "25")) * 1024 * 1024
+
+# Proxies de confianza: solo si el peer (request.client.host) está en esta lista
+# honramos X-Forwarded-For / X-Forwarded-Proto. Coma-separada (IPs de Traefik/
+# EasyPanel). Vacío = nunca confiar en headers de proxy (default seguro).
+TRUSTED_PROXIES = {
+    p.strip() for p in os.getenv("TRUSTED_PROXIES", "").split(",") if p.strip()
+}
+
+# Cookie de sesión Secure: por defecto se decide por esquema/proxy de confianza,
+# pero COOKIE_SECURE permite forzarlo (true/false) — p.ej. false para dev en http.
+_COOKIE_SECURE_ENV = os.getenv("COOKIE_SECURE", "").strip().lower()
+
+# NOTA: STATS es estado POR PROCESO (por worker). Con WEB_CONCURRENCY>1 cada
+# worker tiene su propio contador; /api/stats refleja solo el worker que atendió
+# el request. Para agregados globales habría que mover esto a Redis (INCR).
 STATS = {"conversions": 0, "chars_out": 0, "errors": 0, "started": time.time()}
 
 SUPPORTED_FORMATS = {
@@ -84,17 +109,49 @@ SUPPORTED_FORMATS = {
     "Otros": ["zip", "msg", "ipynb"],
 }
 
+# Extensiones conocidas (en minúscula, con punto) para sanear el suffix del temp.
+KNOWN_SUFFIXES = {"." + e for exts in SUPPORTED_FORMATS.values() for e in exts}
+
+
+def _safe_suffix(name: str) -> str:
+    """Suffix saneado para el archivo temporal: solo si la extensión está en el
+    set conocido (evita que la URL/nombre del atacante controle el suffix).
+    Si no la reconocemos, devolvemos '' (NamedTemporaryFile sin sufijo)."""
+    suffix = Path(name or "").suffix.lower()
+    return suffix if suffix in KNOWN_SUFFIXES else ""
+
+# Capacidades estáticas del servidor (disponibilidad de Pandoc/ODL y catálogo de
+# export). Son inmutables tras el arranque: las calculamos una sola vez en el
+# lifespan para no correr sondas bloqueantes en cada login()/me() (endpoints async).
+_CAPS_STATIC: dict = {}
+
+
+def _compute_caps_static() -> dict:
+    has_export = export_mod.available()
+    return {
+        "anonimal": anonimal_mod.available(),
+        "detectors": detectors_mod.catalog() if anonimal_mod.available() else None,
+        "export": export_mod.catalog() if has_export else [],
+        "advancedExtract": odl_mod.available(),
+    }
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Primer muestreo de CPU (cpu_percent(interval=None) necesita una llamada
+    # previa para tener una línea base) y cálculo único de capacidades estáticas.
+    psutil.cpu_percent(interval=None)
+    _CAPS_STATIC.update(await asyncio.to_thread(_compute_caps_static))
+    yield
+
+
 app = FastAPI(
     title="MarkItDown Web",
     docs_url="/api/docs" if ENABLE_DOCS else None,
     redoc_url=None,
     openapi_url="/api/openapi.json" if ENABLE_DOCS else None,
+    lifespan=_lifespan,
 )
-
-
-@app.on_event("startup")
-async def _prime_cpu():
-    psutil.cpu_percent(interval=None)
 
 
 @app.middleware("http")
@@ -110,7 +167,8 @@ async def security_headers(request: Request, call_next):
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
         "font-src 'self' data: https://cdn.jsdelivr.net; "
-        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        "connect-src 'self'; object-src 'none'; base-uri 'none'; "
+        "frame-ancestors 'none'; frame-src 'none'; form-action 'self'"
     )
     return resp
 
@@ -122,12 +180,66 @@ def _require(request: Request) -> str:
     return role
 
 
+def _require_text_endpoint(request: Request, text: Optional[str]) -> str:
+    """Guard común para export/compact/chunk: auth + rate-limit + tope de tamaño.
+    Reusa las mismas utilidades que /api/convert (_require/check_rate y un tope de
+    bytes), para no dejar estos endpoints sin protección contra DoS."""
+    role = _require(request)
+    caps = auth.caps_for(role)
+    try:
+        check_rate(role, _client_ip(request), caps["rate_per_min"])
+    except SecurityError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    if MAX_TEXT_BYTES and len((text or "").encode("utf-8")) > MAX_TEXT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"El texto supera el límite de {MAX_TEXT_BYTES // (1024*1024)} MB.",
+        )
+    return role
+
+
+def _peer_ip(request: Request) -> Optional[str]:
+    return request.client.host if request.client else None
+
+
+def _from_trusted_proxy(request: Request) -> bool:
+    """¿El peer directo es un proxy de confianza? Solo entonces honramos los
+    headers X-Forwarded-* (si no, un cliente podría spoofearlos)."""
+    peer = _peer_ip(request)
+    return bool(peer and peer in TRUSTED_PROXIES)
+
+
 def _client_ip(request: Request) -> str:
-    # Detrás de un proxy (Traefik/EasyPanel) usamos el primer X-Forwarded-For.
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else "?"
+    # Solo confiamos en X-Forwarded-For si el peer directo es un proxy conocido
+    # (TRUSTED_PROXIES). Si no, usamos el IP real del peer para evitar que un
+    # cliente falsee su IP y burle el rate-limit.
+    if _from_trusted_proxy(request):
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
+    return _peer_ip(request) or "?"
+
+
+def _request_is_https(request: Request) -> bool:
+    """¿El request llegó por HTTPS? Honra X-Forwarded-Proto SOLO si viene de un
+    proxy de confianza (TLS terminado en el proxy); si no, mira el esquema real."""
+    if _from_trusted_proxy(request):
+        proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+        if proto:
+            return proto == "https"
+    return request.url.scheme == "https"
+
+
+def _cookie_secure(request: Request) -> bool:
+    """Decide el flag Secure de la cookie de sesión.
+    - COOKIE_SECURE=true/false fuerza el valor (escape para dev local en http).
+    - Si no se fija, default seguro: Secure cuando el request es HTTPS (incluido
+      el caso de TLS terminado en un proxy de confianza vía X-Forwarded-Proto)."""
+    if _COOKIE_SECURE_ENV in ("1", "true", "yes"):
+        return True
+    if _COOKIE_SECURE_ENV in ("0", "false", "no"):
+        return False
+    return _request_is_https(request)
 
 
 # Proveedores de IA con endpoint compatible OpenAI.
@@ -179,14 +291,14 @@ def resolve_provider(provider, base_url, key, allow_custom):
     """Devuelve (base_url, modelo_por_defecto) según el proveedor elegido o detectado."""
     provider = (provider or "auto").lower()
     if provider in PROVIDER_BASES:
-        return PROVIDER_BASES[provider], DEFAULT_MODELS[provider]
+        return PROVIDER_BASES[provider], DEFAULT_MODELS.get(provider)
     if provider in ("custom", "personalizado") and base_url and allow_custom:
         return base_url, None
     # auto / fallback
     if base_url and allow_custom:
         return base_url, None
     p = detect_provider_from_key(key)
-    return PROVIDER_BASES[p], DEFAULT_MODELS[p]
+    return PROVIDER_BASES[p], DEFAULT_MODELS.get(p)
 
 
 def build_converter(caps: dict, llm_api_key, llm_model, llm_base_url, provider=None) -> MarkItDown:
@@ -214,59 +326,6 @@ def is_youtube(url: str) -> bool:
     return host in YT_HOSTS
 
 
-def youtube_id(url: str):
-    p = urlparse(url)
-    host = (p.hostname or "").lower()
-    if host == "youtu.be":
-        return (p.path.lstrip("/").split("/") or [None])[0] or None
-    if "youtube" in host:
-        qs = parse_qs(p.query)
-        if qs.get("v"):
-            return qs["v"][0]
-        parts = [x for x in p.path.split("/") if x]
-        for key in ("shorts", "embed", "v", "live"):
-            if key in parts:
-                i = parts.index(key)
-                if i + 1 < len(parts):
-                    return parts[i + 1]
-    return None
-
-
-def _yt_title(url: str):
-    try:
-        r = requests.get("https://www.youtube.com/oembed", params={"url": url, "format": "json"}, timeout=8)
-        if r.ok:
-            return r.json().get("title")
-    except Exception:
-        pass
-    return None
-
-
-def youtube_transcript_md(url: str, lang: Optional[str]) -> str:
-    """Obtiene la transcripción de un video de YouTube en Markdown."""
-    vid = youtube_id(url)
-    if not vid:
-        raise ValueError("No pude identificar el video de YouTube.")
-    from youtube_transcript_api import YouTubeTranscriptApi
-    langs = []
-    if lang and lang != "auto":
-        langs.append(lang.split("-")[0])
-    langs += ["es", "en", "pt", "fr", "de", "it"]
-    api = YouTubeTranscriptApi()
-    fetched = api.fetch(vid, languages=langs)
-    data = fetched.to_raw_data() if hasattr(fetched, "to_raw_data") else list(fetched)
-    parts = []
-    for s in data:
-        t = s.get("text") if isinstance(s, dict) else getattr(s, "text", "")
-        if t:
-            parts.append(t)
-    text = " ".join(parts).strip()
-    if not text:
-        raise ValueError("El video no tiene transcripción disponible.")
-    title = _yt_title(url) or "Transcripción de YouTube"
-    return f"# {title}\n\n[{url}]({url})\n\n{text}"
-
-
 def _do_convert(md: MarkItDown, source, lang: Optional[str] = None):
     # PDFs locales: los extraemos con PyMuPDF (respeta /Rotate y contenido
     # girado). Cubre PDFs traídos por URL (ANGEL) y rutas locales (DIOS); pdfminer
@@ -289,11 +348,14 @@ def _caps_payload(role: str) -> dict:
     allowed = auth.caps_for(role).get("server_keys", False)
     d["serverProviders"] = [p for p, k in SERVER_KEYS.items() if k] if allowed else []
     d["version"] = APP_VERSION
-    d["anonimal"] = anonimal_mod.available()   # ¿está habilitada la anonimización de PII?
-    if d["anonimal"]:
-        d["detectors"] = detectors_mod.catalog()   # catálogo para los checkboxes de la UI
-    d["export"] = export_mod.catalog() if export_mod.available() else []   # formatos de salida (Pandoc)
-    d["advancedExtract"] = odl_mod.available()   # extracción avanzada de PDF (OpenDataLoader)
+    # Capacidades estáticas (sondas calculadas una vez en el lifespan; fallback a
+    # cálculo perezoso si por algún motivo el lifespan aún no corrió, p.ej. tests).
+    caps_static = _CAPS_STATIC or _compute_caps_static()
+    d["anonimal"] = caps_static["anonimal"]   # ¿está habilitada la anonimización de PII?
+    if d["anonimal"] and caps_static["detectors"] is not None:
+        d["detectors"] = caps_static["detectors"]   # catálogo para los checkboxes de la UI
+    d["export"] = caps_static["export"]   # formatos de salida (Pandoc)
+    d["advancedExtract"] = caps_static["advancedExtract"]   # extracción avanzada de PDF (ODL)
     return d
 
 
@@ -305,7 +367,7 @@ async def login(request: Request, password: str = Form(...)):
         raise HTTPException(status_code=401, detail="Contraseña incorrecta.")
     token = auth.make_token(role)
     resp = JSONResponse(_caps_payload(role))
-    secure = request.url.scheme == "https" or os.getenv("COOKIE_SECURE", "").lower() in ("1", "true")
+    secure = _cookie_secure(request)
     resp.set_cookie(
         auth.COOKIE_NAME, token, max_age=auth.SESSION_TTL,
         httponly=True, samesite="lax", secure=secure, path="/",
@@ -367,6 +429,17 @@ def stats(request: Request):
 
 
 # --- Conversión --------------------------------------------------------------
+def _effective_max(caps: dict) -> int:
+    """Tope de tamaño efectivo (bytes) para un rol. 0 = sin límite.
+    DIOS (allow_internal) solo está limitado por su propio rol; el resto toma el
+    menor entre el tope global y el del rol, ignorando los que sean 0 (ilimitado)."""
+    role_max = caps["max_file_mb"] * 1024 * 1024
+    if caps["allow_internal"]:
+        return role_max
+    candidates = [v for v in (MAX_UPLOAD_BYTES, role_max) if v]
+    return min(candidates) if candidates else 0
+
+
 async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
     """Lee en bloques abortando si supera el tope (evita OOM — A3)."""
     total = 0
@@ -458,14 +531,7 @@ async def convert(
         raise HTTPException(status_code=400, detail="Subí un archivo o pasá una URL.")
 
     # Límite efectivo de tamaño (0 = sin límite).
-    role_max = caps["max_file_mb"] * 1024 * 1024  # 0 = sin límite para el rol
-    if caps["allow_internal"]:
-        # DIOS: solo lo limita su propio rol (puede ser ilimitado), ignora el tope global.
-        eff_max = role_max
-    else:
-        # Otros: el menor de (tope global, tope del rol), ignorando los que sean 0.
-        candidates = [v for v in (MAX_UPLOAD_BYTES, role_max) if v]
-        eff_max = min(candidates) if candidates else 0
+    eff_max = _effective_max(caps)
 
     eff_key, eff_provider = resolve_key_and_provider(llm_provider, llm_api_key, caps["server_keys"])
     try:
@@ -480,8 +546,10 @@ async def convert(
     pdf_type = None
     ocr_applied = False
     note = None
+    source_name = None
+    file_basename = file.filename if file else None   # nombre ORIGINAL (para aviso PII)
     invoice_pii = []   # campos PII de un comprobante (layout); se calcula con el PDF a mano
-    want_anon = (anonymize or "").strip().lower() in ("typed", "anon", "seudo", "mask", "hash")
+    want_anon = (anonymize or "").strip().lower() in anonimal_mod.MODES
 
     try:
         if url:
@@ -516,7 +584,12 @@ async def convert(
                     data = await asyncio.to_thread(safe_fetch, url, eff_max)
                 except SecurityError as e:
                     raise HTTPException(status_code=400, detail=str(e))
-                suffix = Path(urlsplit_path(url)).suffix
+                # Suffix saneado a partir del path de la URL; si la URL no trae
+                # extensión reconocible pero el contenido empieza con %PDF, lo
+                # tratamos como PDF (si no, _do_convert no detectaría el tipo).
+                suffix = _safe_suffix(urlsplit_path(url))
+                if not suffix and data[:5] == b"%PDF-":
+                    suffix = ".pdf"
                 tmp_path = _write_temp(data, suffix)
                 result = await asyncio.to_thread(_do_convert, md, tmp_path, lang)
                 out_md = result.text_content or ""
@@ -528,7 +601,7 @@ async def convert(
             if not caps["audio_zip"] and (is_media or ext == "zip"):
                 raise HTTPException(status_code=415, detail="Tu rol no puede convertir audio, video ni archivos comprimidos.")
             data = await _read_capped(file, eff_max)
-            tmp_path = _write_temp(data, Path(file.filename or "").suffix)
+            tmp_path = _write_temp(data, _safe_suffix(file.filename or ""))
             tess = ocr_mod.resolve_tess_langs(lang)
             if is_media:
                 # Tope de duración (salvo DIOS). 0 = sin límite.
@@ -544,7 +617,7 @@ async def convert(
                 out_md = f"# Transcripción\n\n{text}" if text else ""
                 title = f"Transcripción ({detected})" if detected else "Transcripción"
                 if not text:
-                    note = "No se detectó voz en el archivo."
+                    note = "noVoice"   # clave i18n (note.noVoice); la UI traduce
             elif use_ocr and ext == "pdf":
                 ocr_out = await asyncio.to_thread(ocr_mod.ocr_pdf, tmp_path, tess)
                 # Extraemos con PyMuPDF (respeta rotación) en vez de pdfminer.
@@ -579,7 +652,7 @@ async def convert(
                         out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, ocr_out)
                         ocr_applied = True
                     else:
-                        note = "Este PDF parece escaneado. Pedí a un nivel con OCR que lo procese."
+                        note = "scanned"   # clave i18n (note.scanned); la UI traduce
                 else:
                     pdf_type = "electrónico"
             else:
@@ -611,13 +684,13 @@ async def convert(
 
     # Anonimización de PII (opcional) vía el microservicio Anonimal.
     #   "typed" → placeholders por categoría (<PRIVATE_PERSON>…)
-    #   "anon"  → un único placeholder <<ANOM_DATA>>
+    #   "anon"  → un único placeholder (ver ANON_PLACEHOLDER en anonimal.py)
     anon_mode = (anonymize or "").strip().lower()
     anon_is_strict = str(anon_strict).lower() in ("1", "true", "yes", "on", "estricto", "strict")
     anonymized = None
     pii_count = None
     pseudo_map = {}
-    if anon_mode in ("typed", "anon", "seudo", "mask", "hash") and markdown.strip():
+    if anon_mode in anonimal_mod.MODES and markdown.strip():
         if not anonimal_mod.available():
             raise HTTPException(status_code=400, detail="La anonimización no está disponible en este servidor.")
         try:
@@ -634,12 +707,24 @@ async def convert(
             # Falla SEGURA: no devolvemos el texto sin anonimizar (sería fuga de PII).
             STATS["errors"] += 1
             raise HTTPException(status_code=503, detail=str(e))
-        # Scrub de metadata: el título del PDF puede contener un nombre.
-        title = None
-        # Aviso si el nombre del archivo contiene un CUIT/CUIL/DNI.
-        if source_name and re.search(r"\b\d{8,11}\b", source_name):
-            note = (note + " · " if note else "") + \
-                "⚠️ El nombre del archivo contiene un número tipo CUIT/DNI; renombralo antes de compartir."
+        # Scrub de metadata: el título y el source (basename/URL) pueden contener
+        # un nombre u otro PII. En vez de descartarlos, los pasamos por el MISMO
+        # modo de anonimización para conservar lo legítimo y enmascarar lo sensible.
+        def _anon_field(val):
+            if not val or not str(val).strip():
+                return val
+            try:
+                out, _n, _m = anonimal_mod.anonymize(
+                    str(val), anon_mode, anon_is_strict, None, user_rules, det_ids)
+                return out
+            except anonimal_mod.AnonimalError:
+                # Falla SEGURA para metadata: si no podemos anonimizar, la omitimos.
+                return None
+        title = await asyncio.to_thread(_anon_field, title)
+        source_name = await asyncio.to_thread(_anon_field, source_name)
+        # Aviso si el nombre del archivo (original) contiene un CUIT/CUIL/DNI.
+        if file_basename and re.search(r"\b\d{8,11}\b", file_basename) and not note:
+            note = "filenamePii"   # clave i18n (note.filenamePii); la UI traduce
 
     STATS["conversions"] += 1
     STATS["chars_out"] += len(markdown)
@@ -651,7 +736,9 @@ async def convert(
             llm_panel = await asyncio.to_thread(llmprep_mod.analyze, markdown, pii_count or 0)
     except Exception:  # noqa: BLE001
         log.exception("Panel LLM falló (no crítico)")
-    return JSONResponse({
+    # note es una CLAVE i18n estable ("noVoice"|"scanned"|"filenamePii") o null;
+    # la UI la traduce client-side (no devolvemos texto en español).
+    resp = JSONResponse({
         "source": source_name,
         "title": title,
         "markdown": markdown,
@@ -666,6 +753,10 @@ async def convert(
         "pseudonym_map": pseudo_map,   # token→original (solo modo seudo) para re-hidratar
         "note": note,
     })
+    if pseudo_map:
+        # El mapa contiene PII en claro (token→original): que no quede en cachés.
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.post("/api/anon_rules/validate")
@@ -716,11 +807,9 @@ async def redact_endpoint(
     det_ids = None if anon_detectors is None else [x.strip() for x in anon_detectors.split(",") if x.strip()]
     strict = str(anon_strict).lower() in ("1", "true", "yes", "on", "estricto", "strict")
 
-    role_max = caps["max_file_mb"] * 1024 * 1024
-    eff_max = role_max if caps["allow_internal"] else (
-        min([v for v in (MAX_UPLOAD_BYTES, role_max) if v]) if (MAX_UPLOAD_BYTES or role_max) else 0)
+    eff_max = _effective_max(caps)
     data = await _read_capped(file, eff_max)
-    tmp_path = _write_temp(data, Path(file.filename or "").suffix)
+    tmp_path = _write_temp(data, _safe_suffix(file.filename or ""))
     extra_tmp = []
     try:
         pdf_path = tmp_path
@@ -793,7 +882,7 @@ async def redact_endpoint(
 @app.post("/api/export")
 async def export_endpoint(request: Request, text: str = Form(...), fmt: str = Form(...)):
     """Exporta el Markdown a otro formato (DOCX, ODT, XML DocBook/JATS/TEI, etc.) vía Pandoc."""
-    _require(request)
+    _require_text_endpoint(request, text)
     try:
         data, ext, mime = await asyncio.to_thread(export_mod.convert, text or "", fmt)
     except export_mod.ExportError as e:
@@ -814,7 +903,7 @@ async def model_prices(request: Request):
 @app.post("/api/compact")
 async def compact_endpoint(request: Request, text: str = Form(...)):
     """Devuelve el Markdown compactado (menos tokens, mismo sentido) para descargar."""
-    _require(request)
+    _require_text_endpoint(request, text)
     out = await asyncio.to_thread(llmprep_mod.compact, text or "")
     return Response(out, media_type="text/markdown; charset=utf-8",
                     headers={"X-Tokens-Before": str(llmprep_mod.count_tokens(text or "")),
@@ -826,16 +915,19 @@ async def chunk_endpoint(request: Request, text: str = Form(...),
                          size: Optional[str] = Form(default=None)):
     """Parte el Markdown en chunks por presupuesto de tokens. Devuelve JSONL
     (una línea por chunk) listo para embeddings / vector DB."""
-    _require(request)
-    try:
-        n = max(128, min(8192, int(size))) if size else 1024
-    except ValueError:
+    _require_text_endpoint(request, text)
+    if size:
+        try:
+            # int(float(...)) tolera "1024.0"; un valor no numérico es un 422 claro.
+            n = max(128, min(8192, int(float(size))))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="El parámetro 'size' debe ser un número.")
+    else:
         n = 1024
     chunks = await asyncio.to_thread(llmprep_mod.chunk, text or "", n)
-    import json as _json
     lines = []
     for i, c in enumerate(chunks):
-        lines.append(_json.dumps(
+        lines.append(json.dumps(
             {"id": i, "tokens": llmprep_mod.count_tokens(c), "text": c}, ensure_ascii=False))
     body = "\n".join(lines) + ("\n" if lines else "")
     return Response(body, media_type="application/x-ndjson; charset=utf-8",
@@ -849,17 +941,18 @@ def _write_temp(data: bytes, suffix: str) -> str:
 
 
 def urlsplit_path(url: str) -> str:
-    from urllib.parse import urlparse
     return urlparse(url).path or "x"
+
+
+# index.html con la versión ya inyectada en las URLs de los assets (?v=) para
+# invalidar la caché del navegador en cada deploy. Se calcula UNA vez al import
+# (el archivo no cambia en runtime) en vez de leer disco + .replace por request.
+_INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace("__VER__", APP_VERSION)
 
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    # Inyecta la versión en las URLs de los assets (?v=) para invalidar la caché
-    # del navegador en cada deploy: así nadie necesita hard refresh para ver el
-    # JS/CSS nuevo.
-    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    return html.replace("__VER__", APP_VERSION)
+    return _INDEX_HTML
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

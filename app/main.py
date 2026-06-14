@@ -178,6 +178,11 @@ async def security_headers(request: Request, call_next):
     # (dev local) para no romper el acceso por http://localhost.
     if _request_is_https(request):
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Estáticos: revalidar siempre (con ETag → 304 si no cambió, o el archivo nuevo
+    # si cambió). Evita que el navegador sirva un app.js/CSS viejo cacheado cuando se
+    # actualiza el código sin cambiar la versión del query (?v=).
+    if request.url.path.startswith("/static/") and "cache-control" not in (k.lower() for k in resp.headers):
+        resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 

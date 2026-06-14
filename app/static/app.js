@@ -1451,8 +1451,10 @@ function openPagesFor(it) {
   $("pgApply").addEventListener("click", () => {
     if (_pagesItem) {
       _pagesItem.pages = _pgBuildSpec();
-      const span = document.querySelector("#it" + _pagesItem.id + " .pg-pick span");
-      if (span) span.textContent = pagesBtnLabel(_pagesItem.pages || "");
+      // Refrescá el badge del ítem por el camino canónico (updateItemNode escribe
+      // la etiqueta desde it.pages). Más robusto que un querySelector suelto.
+      const root = document.getElementById("it" + _pagesItem.id);
+      if (root) updateItemNode(_pagesItem, root);
     }
     closeModal("pagesModal");
   });

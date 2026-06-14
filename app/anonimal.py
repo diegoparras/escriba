@@ -18,7 +18,9 @@ import hmac
 import logging
 import os
 import re
+import secrets
 import unicodedata
+import uuid
 
 import requests
 
@@ -75,7 +77,13 @@ def _detect(text: str) -> dict:
     try:
         r = requests.post(f"{ANONIMAL_URL}/anonymize", json={"text": text}, timeout=_TIMEOUT)
     except requests.RequestException as e:
-        raise AnonimalError(f"No se pudo contactar al anonimizador: {e}") from e
+        # No exponer internals de red (host/puerto/timeout) al cliente: logueamos
+        # el detalle con un err_id y devolvemos un mensaje genérico correlacionable.
+        err_id = uuid.uuid4().hex[:12]
+        log.warning("anonimal: fallo de conexión err_id=%s: %s", err_id, e)
+        raise AnonimalError(
+            f"No se pudo contactar al anonimizador (err_id={err_id})."
+        ) from e
     if r.status_code == 503:
         raise AnonimalError("El anonimizador se está iniciando. Probá de nuevo en unos segundos.")
     if r.status_code == 413:
@@ -212,7 +220,22 @@ def _build(text, merged, anon):
 # ---------------------------------------------------------------------------
 # Clave para el hash estable. Fijala con ANON_HASH_KEY para que el MISMO dato
 # produzca el MISMO seudónimo entre ejecuciones y entre documentos (linkage).
-_HASH_KEY = (os.getenv("ANON_HASH_KEY", "") or "escriba-pseudonym-v1").encode("utf-8")
+#
+# SEGURIDAD: si ANON_HASH_KEY NO está seteada NO usamos una clave pública/hardcodeada
+# (sería reversible por rainbow table sobre el espacio de DNI/CUIT/CBU). En su lugar
+# generamos una clave aleatoria de 256 bits POR PROCESO. Consecuencia: el hash NO será
+# estable entre reinicios ni entre workers salvo que se setee ANON_HASH_KEY. Avisamos
+# con un warning, pero NO fallamos en duro para no romper la demo.
+_ANON_HASH_KEY_ENV = os.getenv("ANON_HASH_KEY", "") or ""
+if _ANON_HASH_KEY_ENV:
+    _HASH_KEY = _ANON_HASH_KEY_ENV.encode("utf-8")
+else:
+    _HASH_KEY = secrets.token_bytes(32)   # 256 bits aleatorios por proceso
+    log.warning(
+        "ANON_HASH_KEY no está seteada: se generó una clave aleatoria por proceso. "
+        "El modo 'hash' NO será estable entre reinicios ni workers (sin linkage "
+        "cruzado). Para seudónimos estables seteá ANON_HASH_KEY con un secreto."
+    )
 
 
 def _apply(text, merged, render):
@@ -257,7 +280,7 @@ def _mask_value(frag, typ):
 def _hash_token(frag, typ):
     """Seudónimo ESTABLE por HMAC: mismo dato (normalizado) → mismo token, acá y
     en otros documentos. Irreversible y sin mapa (sirve para linkage anonimizado)."""
-    h = hmac.new(_HASH_KEY, frag.strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()[:6]
+    h = hmac.new(_HASH_KEY, frag.strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()[:16]
     return "«%s_%s»" % (typ, h)
 
 

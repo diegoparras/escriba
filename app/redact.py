@@ -102,6 +102,61 @@ def entities_pdf(path: str, strict: bool = False, rules=None, detector_ids=None)
         doc.close()
 
 
+def _scrub_metadata(doc) -> None:
+    """Borra TODA la metadata del PDF que pueda filtrar PII fuera del cuerpo
+    visible: DocInfo (title/author/subject/keywords/...), stream XMP, adjuntos
+    embebidos y campos de formulario (AcroForm widgets). Es defensa en
+    profundidad sobre apply_redactions, que sólo limpia el contenido de página.
+
+    Cada operación va aislada en su propio try/except: una versión de PyMuPDF
+    que no exponga algún método NO debe romper la censura (fail-safe). El cuerpo
+    ya quedó redactado; esto sólo cierra canales laterales de fuga.
+    """
+    # 1) DocInfo (title, author, subject, keywords, creator, producer, ...).
+    try:
+        doc.set_metadata({})
+    except Exception:  # noqa: BLE001
+        log.warning("redact: no se pudo limpiar DocInfo", exc_info=True)
+
+    # 2) Stream XMP (metadata XML, puede traer PII propia o duplicada).
+    try:
+        doc.del_xml_metadata()
+    except Exception:  # noqa: BLE001
+        log.warning("redact: no se pudo limpiar XMP", exc_info=True)
+
+    # 3) Adjuntos embebidos (un PDF puede llevar el original sin censurar).
+    try:
+        names = list(doc.embfile_names())
+    except Exception:  # noqa: BLE001
+        names = []
+    for name in names:
+        try:
+            doc.embfile_del(name)
+        except Exception:  # noqa: BLE001
+            log.warning("redact: no se pudo borrar adjunto embebido", exc_info=True)
+
+    # 4) Campos de formulario / anotaciones remanentes con texto PII (valores
+    #    de widgets que no son parte del flujo de texto y pueden no haberse
+    #    redactado). Sólo borramos los que conservan contenido textual.
+    try:
+        for page in doc:
+            try:
+                annots = list(page.annots())
+            except Exception:  # noqa: BLE001
+                continue
+            for annot in annots:
+                try:
+                    info = annot.info or {}
+                    has_text = any(info.get(k) for k in ("content", "title", "subject"))
+                    is_widget = getattr(annot, "type", (None,))[0] == fitz.PDF_ANNOT_WIDGET
+                    if has_text or is_widget:
+                        page.delete_annot(annot)
+                except Exception:  # noqa: BLE001
+                    continue
+    except Exception:  # noqa: BLE001
+        log.warning("redact: no se pudo revisar anotaciones/campos", exc_info=True)
+
+
 def redact_pdf(path: str, strict: bool = False, rules=None, detector_ids=None, only=None):
     """
     Censura visualmente el PDF en `path`. Devuelve (pdf_bytes, entidades).
@@ -117,8 +172,13 @@ def redact_pdf(path: str, strict: bool = False, rules=None, detector_ids=None, o
             raise RedactError("El documento no tiene texto detectable (¿escaneado sin OCR?).")
         spans = _detect(path, full, strict, rules, detector_ids)
         if only is not None:
-            keep = {str(x).strip().lower() for x in only}
-            spans = [s for s in spans if full[s["start"]:s["end"]].strip().lower() in keep]
+            # Normalizar IGUAL que el pipeline (NFC + casefold via _keep_key) en
+            # AMBOS lados, para no dejar fuera entidades tildadas si el span del
+            # PDF está en otra forma Unicode (NFD vs NFC). Antes usaba
+            # .strip().lower() y fallaba abierto (fail-open) con tildes.
+            keep = {anonimal._keep_key(str(x)) for x in only}
+            spans = [s for s in spans
+                     if anonimal._keep_key(full[s["start"]:s["end"]]) in keep]
 
         # Repartir spans por página y tachar las palabras que tocan.
         entities = 0
@@ -149,6 +209,13 @@ def redact_pdf(path: str, strict: bool = False, rules=None, detector_ids=None, o
                 # de las imágenes debajo de cada rectángulo.
                 page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
             base = hi + len(_PAGE_SEP)
+
+        # CRÍTICO: limpiar TODA la metadata antes de serializar para que el PDF
+        # censurado no filtre PII por canales fuera del cuerpo visible.
+        # apply_redactions sólo borra el contenido de página; DocInfo, XMP,
+        # adjuntos embebidos y campos de formulario sobreviven y pueden contener
+        # nombre/DNI/CUIT/email (Propiedades del PDF, exiftool, pdftotext).
+        _scrub_metadata(doc)
 
         out = doc.tobytes(garbage=3, deflate=True)
         return out, entities

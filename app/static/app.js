@@ -1237,10 +1237,23 @@ document.querySelectorAll("#settingsTabs .tab").forEach(tb => {
   });
 });
 
-// ---------- Cookies de YouTube (se guardan SOLO en este navegador) ----------
+// ---------- Cookies de YouTube (se guardan SOLO en este navegador, SOLO en esta sesión) ----------
+// Defensa en profundidad: las cookies de YouTube son credenciales de sesión de Google.
+// Por defecto NO se persisten en disco (localStorage); viven en sessionStorage y se
+// borran al cerrar la pestaña. Se migra y limpia cualquier valor legado de localStorage.
 const YTCK_STORE = "escriba_yt_cookies";
+const ytckStore = (() => { try { return window.sessionStorage; } catch { return null; } })();
+(function migrateYtCookies() {
+  try {
+    const legacy = localStorage.getItem(YTCK_STORE);
+    if (legacy != null) {
+      if (ytckStore && !ytckStore.getItem(YTCK_STORE)) ytckStore.setItem(YTCK_STORE, legacy);
+      localStorage.removeItem(YTCK_STORE);   // dejar de persistir credenciales en disco
+    }
+  } catch {}
+})();
 let ytckShown = false;   // por seguridad arrancan OCULTAS (blur)
-function getYtCookies() { try { return localStorage.getItem(YTCK_STORE) || ""; } catch { return ""; } }
+function getYtCookies() { try { return (ytckStore && ytckStore.getItem(YTCK_STORE)) || ""; } catch { return ""; } }
 function ytCookiesStatus(msg) { const e = $("ytCookiesStatus"); if (e) e.textContent = msg || ""; }
 function applyYtckMask() {
   const ta = $("ytCookies"); if (!ta) return;
@@ -1261,13 +1274,13 @@ function applyYtckMask() {
   ta.addEventListener("focus", () => { ytckShown = true; applyYtckMask(); });
   $("saveYtCookiesBtn")?.addEventListener("click", () => {
     const v = ta.value.trim();
-    try { v ? localStorage.setItem(YTCK_STORE, v) : localStorage.removeItem(YTCK_STORE); } catch {}
+    try { if (ytckStore) { v ? ytckStore.setItem(YTCK_STORE, v) : ytckStore.removeItem(YTCK_STORE); } localStorage.removeItem(YTCK_STORE); } catch {}
     ytCookiesStatus(v ? t("settings.ytCookiesSaved") : "");
     toast(v ? t("settings.ytCookiesSaved") : t("settings.ytCookiesCleared"));
     ytckShown = false; applyYtckMask();   // re-ocultar tras guardar
   });
   $("clearYtCookiesBtn")?.addEventListener("click", () => {
-    ta.value = ""; try { localStorage.removeItem(YTCK_STORE); } catch {}
+    ta.value = ""; try { if (ytckStore) ytckStore.removeItem(YTCK_STORE); localStorage.removeItem(YTCK_STORE); } catch {}
     ytCookiesStatus(""); ytckShown = false; applyYtckMask(); toast(t("settings.ytCookiesCleared"));
   });
   $("toggleYtCookiesBtn")?.addEventListener("click", () => { ytckShown = !ytckShown; applyYtckMask(); });

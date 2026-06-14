@@ -8,6 +8,10 @@ Pandoc es un binario único (sin modelos, RAM ~0).
 Seguridad / lectura de archivos locales:
   - Formatos de texto (HTML, LaTeX, RST, DocBook, JATS, TEI, OPML): corren con
     --sandbox, así Pandoc no puede leer archivos del sistema desde el Markdown.
+    Además se endurece el reader a 'markdown-raw_html-raw_tex' para que el
+    artefacto exportado NO arrastre HTML/LaTeX crudo del insumo (p. ej.
+    <script>/<iframe file://>/\\input/\\write18) que podría dispararse en la
+    máquina de quien abra el HTML o compile el .tex.
   - Formatos binarios (DOCX, ODT, EPUB): NO usan --sandbox. Este Pandoc trae los
     data files embebidos en el binario (build --embed-data-files, sin data dir en
     disco), y en modo sandbox los busca en ./data y falla con error 97 / HTTP 400.
@@ -76,7 +80,11 @@ def convert(markdown: str, fmt_id: str, title: str | None = None):
         # endureciendo el reader (sin raw HTML ni raw TeX) y sin --extract-media.
         reader = "markdown-raw_html-raw_tex"
     else:
-        reader = "markdown"
+        # Writers de texto: además de --sandbox, endurecemos el reader para que el
+        # HTML/LaTeX exportado NO arrastre <script>/<iframe>/\input/\write18 crudos
+        # del insumo (passthrough raw_html/raw_tex). Defensa para quien abra/compile
+        # el artefacto, sin afectar la conversión normal de Markdown.
+        reader = "markdown-raw_html-raw_tex"
     base = ["pandoc", "-f", reader, "-t", writer,
             "--standalone", "--metadata", "title=" + doc_title]
     # --sandbox da seguridad (no lee archivos del sistema desde el Markdown) pero

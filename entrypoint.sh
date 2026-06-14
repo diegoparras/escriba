@@ -60,4 +60,4 @@ echo "   rate-limit / redis : $REDIS_MODE"
 echo "   puerto             : $PORT"
 echo "──────────────────────────────────────────────"
 
-exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers "$WEB_CONCURRENCY" --proxy-headers --forwarded-allow-ips='*'
+exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers "$WEB_CONCURRENCY"

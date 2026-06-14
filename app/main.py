@@ -10,12 +10,14 @@ Seguridad + roles:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
 import subprocess
 import tempfile
+import threading
 import time
 import unicodedata
 import uuid
@@ -46,7 +48,8 @@ from . import pdf_extract
 from . import redact as redact_mod
 from . import transcribe as tr_mod
 from . import yt_transcript
-from .security import SecurityError, assert_public_url, check_rate, ext_of, safe_fetch
+from . import security as _sec_mod
+from .security import SecurityError, _PinnedIPAdapter, assert_public_url, check_rate, ext_of, safe_fetch
 
 IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp"}
 AUDIO_EXTS = tr_mod.AUDIO_EXTS
@@ -170,6 +173,11 @@ async def security_headers(request: Request, call_next):
         "connect-src 'self'; object-src 'none'; base-uri 'none'; "
         "frame-ancestors 'none'; frame-src 'none'; form-action 'self'"
     )
+    # HSTS solo cuando el request llegó por HTTPS (incluido TLS terminado en un
+    # proxy de confianza vía X-Forwarded-Proto). No lo emitimos en HTTP plano
+    # (dev local) para no romper el acceso por http://localhost.
+    if _request_is_https(request):
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return resp
 
 
@@ -177,6 +185,7 @@ def _require(request: Request) -> str:
     role = auth.identity(request)
     if not role:
         raise HTTPException(status_code=401, detail="Iniciá sesión para usar el conversor.")
+    # La revocación por logout la maneja auth.identity → verify_token (denylist por jti).
     return role
 
 
@@ -234,12 +243,95 @@ def _cookie_secure(request: Request) -> bool:
     """Decide el flag Secure de la cookie de sesión.
     - COOKIE_SECURE=true/false fuerza el valor (escape para dev local en http).
     - Si no se fija, default seguro: Secure cuando el request es HTTPS (incluido
-      el caso de TLS terminado en un proxy de confianza vía X-Forwarded-Proto)."""
+      el caso de TLS terminado en un proxy de confianza vía X-Forwarded-Proto).
+
+    DESPLIEGUE DETRÁS DE PROXY TLS (Traefik/EasyPanel/Nginx):
+      El TLS se termina en el proxy y la app recibe http. Para que la cookie salga
+      con Secure y se emita HSTS (ver security_headers), seteá UNA de estas:
+        - COOKIE_SECURE=true   (fuerza Secure siempre; lo más simple), o
+        - TRUSTED_PROXIES=<IP exacta del proxy>  (entonces se honra
+          X-Forwarded-Proto: https y _request_is_https() devuelve True).
+      NUNCA pongas el proxy como '*'. TRUSTED_PROXIES vacío = no se confía en
+      ningún header X-Forwarded-* (default seguro: la IP/See esquema son los reales
+      del peer)."""
     if _COOKIE_SECURE_ENV in ("1", "true", "yes"):
         return True
     if _COOKIE_SECURE_ENV in ("0", "false", "no"):
         return False
     return _request_is_https(request)
+
+
+# --- Auditoría append-only del tratamiento (compliance) ----------------------
+# Log estructurado (una línea JSON por evento) del tratamiento de datos
+# personales en convert/redact/export. SIN contenido ni PII: solo metadatos
+# (timestamp, rol, id de sesión NO-PII, endpoint, operación, modo de anon,
+# conteo de PII, resultado). El destino real (append-only fuera del proceso) se
+# configura por logging handler; acá emitimos a un logger dedicado.
+_audit_log = logging.getLogger("markitdown.audit")
+
+
+def _session_id(request: Request) -> str:
+    """Identificador de sesión NO-PII para correlación en auditoría.
+    Deriva un hash corto y estable de la firma del token (no expone el token ni
+    el rol ni datos del usuario). Si no hay token, usa el IP (también no-PII a
+    estos fines) hasheado. Nunca incluye el secreto ni PII del documento."""
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if not token:
+        a = request.headers.get("authorization", "")
+        if a.lower().startswith("bearer "):
+            token = a[7:].strip()
+    seed = token or _client_ip(request)
+    return hashlib.sha256((seed or "?").encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _audit(request: Request, role: str, endpoint: str, operation: str,
+           result: str, anon_mode=None, pii_count=None) -> None:
+    """Emite UN registro de auditoría. Nunca debe romper el request: cualquier
+    falla del logging se traga. NO recibe ni loggea contenido ni PII."""
+    try:
+        _audit_log.info(json.dumps({
+            "ts": int(time.time()),
+            "role": role,
+            "sid": _session_id(request),
+            "endpoint": endpoint,
+            "op": operation,
+            "anon_mode": anon_mode or None,
+            "pii_count": int(pii_count) if pii_count is not None else None,
+            "result": result,
+        }, ensure_ascii=False, separators=(",", ":")))
+    except Exception:  # noqa: BLE001 — auditar nunca debe tumbar el tratamiento
+        pass
+
+
+# --- Revocación de sesión (logout server-side) -------------------------------
+# La revocación vive 100% en auth.py: make_token agrega un 'jti', /api/logout
+# llama auth.revoke_request() (denylist con TTL=exp en el Redis embebido, con
+# fallback a memoria), y auth.verify_token() consulta is_revoked(jti) en cada
+# request. Acá no duplicamos nada para evitar dos sistemas incoherentes.
+
+
+# --- CSRF: verificación de Origin/Referer en POSTs mutadores -----------------
+def _csrf_check(request: Request) -> None:
+    """Defensa CSRF para POSTs mutadores: además de SameSite=lax (cookie), si el
+    request trae Origin (o Referer como fallback) exigimos que sea el MISMO host
+    que el del request. Rechaza cross-origin con 403. Si no hay ninguno de los
+    dos headers (clientes no-browser: n8n/scripts con API token), no bloquea."""
+    origin = request.headers.get("origin")
+    ref = None
+    if not origin:
+        ref = request.headers.get("referer")
+    src = origin or ref
+    if not src:
+        return  # cliente no-browser (API token); SameSite ya cubre browsers
+    try:
+        src_host = urlparse(src).netloc.lower()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=403, detail="Origen no permitido.")
+    self_host = (request.url.netloc or "").lower()
+    fwd_host = request.headers.get("host")
+    allowed = {h for h in (self_host, (fwd_host or "").lower()) if h}
+    if src_host and src_host not in allowed:
+        raise HTTPException(status_code=403, detail="Origen no permitido.")
 
 
 # Proveedores de IA con endpoint compatible OpenAI.
@@ -359,12 +451,68 @@ def _caps_payload(role: str) -> dict:
     return d
 
 
+# --- Anti fuerza-bruta en /api/login -----------------------------------------
+# Dos defensas, sobre la IP del cliente (ya saneada por _client_ip → solo
+# confía en XFF desde TRUSTED_PROXIES):
+#   1) Rate-limit por IP (reusa check_rate, mismo backend Redis/memoria).
+#   2) Lockout + backoff exponencial por cuenta-IP tras N fallos seguidos.
+LOGIN_RATE_PER_MIN = int(os.getenv("LOGIN_RATE_PER_MIN", "10"))   # intentos/min/IP
+LOGIN_LOCKOUT_AFTER = int(os.getenv("LOGIN_LOCKOUT_AFTER", "5"))  # fallos antes de backoff
+LOGIN_LOCKOUT_MAX_S = int(os.getenv("LOGIN_LOCKOUT_MAX_S", "300"))  # tope del backoff
+
+# Estado de fallos por IP: {ip: (fallos_seguidos, epoch_hasta_el_que_está_bloqueado)}
+_login_fail: dict = {}
+_login_fail_lock = threading.Lock()
+
+
+def _login_locked_for(ip: str) -> int:
+    """Segundos que faltan de lockout para esta IP (0 si no está bloqueada)."""
+    with _login_fail_lock:
+        _fails, until = _login_fail.get(ip, (0, 0.0))
+    rem = until - time.time()
+    return int(rem) if rem > 0 else 0
+
+
+def _login_register_fail(ip: str) -> None:
+    """Suma un fallo y, pasado el umbral, fija backoff exponencial con tope."""
+    with _login_fail_lock:
+        fails, _until = _login_fail.get(ip, (0, 0.0))
+        fails += 1
+        until = 0.0
+        if fails >= LOGIN_LOCKOUT_AFTER:
+            extra = fails - LOGIN_LOCKOUT_AFTER
+            backoff = min(LOGIN_LOCKOUT_MAX_S, 2 ** extra)
+            until = time.time() + backoff
+        _login_fail[ip] = (fails, until)
+
+
+def _login_reset(ip: str) -> None:
+    with _login_fail_lock:
+        _login_fail.pop(ip, None)
+
+
 @app.post("/api/login")
 async def login(request: Request, password: str = Form(...)):
+    _csrf_check(request)
+    ip = _client_ip(request)
+    # 1) Rate-limit por IP (rol fijo "login" para no mezclar buckets con la API).
+    try:
+        check_rate("login", ip, LOGIN_RATE_PER_MIN)
+    except SecurityError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    # 2) Lockout/backoff por IP tras fallos repetidos.
+    locked = _login_locked_for(ip)
+    if locked:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Demasiados intentos fallidos. Probá de nuevo en {locked}s.",
+        )
     role = auth.role_for_password(password)
     if not role:
+        _login_register_fail(ip)
         await asyncio.sleep(0.5)  # pequeño retardo anti fuerza bruta
         raise HTTPException(status_code=401, detail="Contraseña incorrecta.")
+    _login_reset(ip)
     token = auth.make_token(role)
     resp = JSONResponse(_caps_payload(role))
     secure = _cookie_secure(request)
@@ -372,12 +520,16 @@ async def login(request: Request, password: str = Form(...)):
         auth.COOKIE_NAME, token, max_age=auth.SESSION_TTL,
         httponly=True, samesite="lax", secure=secure, path="/",
     )
-    log.info("Login OK rol=%s ip=%s", role, _client_ip(request))
+    log.info("Login OK rol=%s ip=%s", role, ip)
     return resp
 
 
 @app.post("/api/logout")
-async def logout():
+async def logout(request: Request):
+    # Revoca el token server-side (denylist con TTL = exp) antes de borrar la
+    # cookie, para que un token ya capturado no se pueda reusar vía Bearer.
+    _csrf_check(request)
+    auth.revoke_request(request)   # denylist por jti (auth.verify_token lo rechaza)
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(auth.COOKIE_NAME, path="/")
     return resp
@@ -386,6 +538,7 @@ async def logout():
 @app.get("/api/me")
 async def me(request: Request):
     role = auth.identity(request)
+    # auth.identity ya rechaza tokens revocados (verify_token consulta el denylist por jti).
     if not role:
         return JSONResponse({"authenticated": False, "humanOpen": auth.HUMAN_OPEN}, status_code=200)
     return {"authenticated": True, **_caps_payload(role)}
@@ -463,27 +616,35 @@ async def list_models(
     llm_base_url: Optional[str] = Form(default=None),
 ):
     """Trae los modelos disponibles del proveedor (OpenAI, Gemini, OpenRouter…)."""
+    _csrf_check(request)
     role = _require(request)
     caps = auth.caps_for(role)
     eff_key, eff_provider = resolve_key_and_provider(llm_provider, llm_api_key, caps["server_keys"])
     if not eff_key:
         raise HTTPException(status_code=400, detail="Falta una API key (ni del usuario ni del servidor).")
     base, _ = resolve_provider(eff_provider, llm_base_url, eff_key, caps["llm_custom_base"])
+    _pin_ips = None
     try:
         if not caps["allow_internal"]:
-            assert_public_url(base)
+            # Validamos Y guardamos las IPs para pinear la conexión (anti rebinding).
+            _pin_ips = assert_public_url(base)
     except SecurityError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     def _fetch():
-        # allow_redirects=False: evita SSRF por redirección a una IP interna
-        # cuando el rol usa una Base URL personalizada.
-        r = requests.get(
-            base.rstrip("/") + "/models",
-            headers={"Authorization": f"Bearer {eff_key}"},
-            timeout=15,
-            allow_redirects=False,
-        )
+        url = base.rstrip("/") + "/models"
+        headers = {"Authorization": f"Bearer {eff_key}"}
+        # allow_redirects=False: evita SSRF por redirección a una IP interna.
+        if _pin_ips:
+            # Pinea la IP ya validada: sin segunda resolución DNS => sin ventana
+            # de DNS rebinding / TOCTOU (mismo criterio que safe_fetch).
+            s = requests.Session()
+            ad = _PinnedIPAdapter(pinned_ip=_pin_ips[0])
+            s.mount("http://", ad)
+            s.mount("https://", ad)
+            r = s.get(url, headers=headers, timeout=15, allow_redirects=False)
+        else:
+            r = requests.get(url, headers=headers, timeout=15, allow_redirects=False)
         r.raise_for_status()
         return r.json()
 
@@ -516,6 +677,7 @@ async def convert(
     anon_rules: Optional[str] = Form(default=None),
     anon_detectors: Optional[str] = Form(default=None),
 ):
+    _csrf_check(request)
     role = _require(request)
     caps = auth.caps_for(role)
     use_ocr = str(ocr).lower() in ("1", "true", "yes", "on")
@@ -705,8 +867,15 @@ async def convert(
             anonymized = anon_mode
         except anonimal_mod.AnonimalError as e:
             # Falla SEGURA: no devolvemos el texto sin anonimizar (sería fuga de PII).
+            # No reenviamos str(e): puede traer host/puerto internos (anon_demo:8000).
             STATS["errors"] += 1
-            raise HTTPException(status_code=503, detail=str(e))
+            err_id = uuid.uuid4().hex[:8]
+            log.warning("Anonimización no disponible [%s] rol=%s: %s", err_id, role, e)
+            _audit(request, role, "/api/convert", "convert",
+                   "error", anon_mode=anon_mode, pii_count=pii_count)
+            raise HTTPException(
+                status_code=503,
+                detail=f"El servicio de anonimización no está disponible ahora (ref {err_id}).")
         # Scrub de metadata: el título y el source (basename/URL) pueden contener
         # un nombre u otro PII. En vez de descartarlos, los pasamos por el MISMO
         # modo de anonimización para conservar lo legítimo y enmascarar lo sensible.
@@ -756,12 +925,15 @@ async def convert(
     if pseudo_map:
         # El mapa contiene PII en claro (token→original): que no quede en cachés.
         resp.headers["Cache-Control"] = "no-store"
+    _audit(request, role, "/api/convert", "convert", "ok",
+           anon_mode=anonymized, pii_count=pii_count)
     return resp
 
 
 @app.post("/api/anon_rules/validate")
 async def validate_anon_rules(request: Request, anon_rules: Optional[str] = Form(default=None)):
     """Valida (con RE2) las reglas personalizadas del usuario. Para feedback en la UI."""
+    _csrf_check(request)
     _require(request)
     try:
         r = anon_rules_mod.parse_rules(anon_rules)
@@ -787,6 +959,7 @@ async def redact_endpoint(
     el texto y los píxeles debajo de cada caja se eliminan del archivo).
     Con preview=1 devuelve JSON con la LISTA de lo que se tacharía (sin generar
     el PDF), para confirmar antes de descargar."""
+    _csrf_check(request)
     is_preview = str(preview).lower() in ("1", "true", "yes", "on")
     role = _require(request)
     caps = auth.caps_for(role)
@@ -829,9 +1002,12 @@ async def redact_endpoint(
         if is_preview:
             ents = await asyncio.to_thread(
                 redact_mod.entities_pdf, pdf_path, strict, user_rules, det_ids)
+            total = sum(e["count"] for e in ents)
+            _audit(request, role, "/api/redact", "redact_preview", "ok",
+                   anon_mode=("strict" if strict else "default"), pii_count=total)
             return JSONResponse({
                 "entities": ents,
-                "count": sum(e["count"] for e in ents),
+                "count": total,
                 "unique": len(ents),
                 "strict": strict,
                 "detectors": (len(det_ids) if det_ids is not None else None),
@@ -851,8 +1027,15 @@ async def redact_endpoint(
         raise
     except (redact_mod.RedactError, anonimal_mod.AnonimalError) as e:
         # Falla SEGURA: nunca devolvemos el documento sin censurar.
+        # No reenviamos str(e): puede filtrar host/puerto internos (anon_demo:8000).
         STATS["errors"] += 1
-        raise HTTPException(status_code=503, detail=str(e))
+        err_id = uuid.uuid4().hex[:8]
+        log.warning("Censura visual no disponible [%s] rol=%s: %s", err_id, role, e)
+        _audit(request, role, "/api/redact",
+               ("redact_preview" if is_preview else "redact"), "error")
+        raise HTTPException(
+            status_code=503,
+            detail=f"El servicio de censura no está disponible ahora (ref {err_id}).")
     except subprocess.TimeoutExpired:
         STATS["errors"] += 1
         raise HTTPException(status_code=504, detail="El OCR tardó demasiado y se canceló.")
@@ -869,6 +1052,8 @@ async def redact_endpoint(
                 pass
 
     base = re.sub(r"[^\w\-. ]", "_", Path(file.filename or "documento").stem) or "documento"
+    _audit(request, role, "/api/redact", "redact", "ok",
+           anon_mode=("strict" if strict else "default"), pii_count=entities)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -879,14 +1064,40 @@ async def redact_endpoint(
     )
 
 
+# Formatos de exportación BINARIOS (cada uno = un fork de Pandoc, costoso): los
+# derivamos del catálogo del módulo export (índice 3 = bin?). El rol mínimo
+# (HUMANO) no los puede disparar para no exponer Pandoc como palanca de DoS;
+# sí puede exportar los de TEXTO (HTML/LaTeX/RST/XML…). Override por env
+# (HUMAN_EXPORT_BINARY=true) si se quiere habilitar.
+try:
+    _BINARY_EXPORT_FMTS = {f[0] for f in export_mod._FORMATS if f[3]}
+except Exception:  # noqa: BLE001 — fallback defensivo si cambia la estructura
+    _BINARY_EXPORT_FMTS = {"docx", "odt", "epub"}
+_HUMAN_EXPORT_BINARY = os.getenv("HUMAN_EXPORT_BINARY", "false").lower() in ("1", "true", "yes")
+
+
 @app.post("/api/export")
 async def export_endpoint(request: Request, text: str = Form(...), fmt: str = Form(...)):
     """Exporta el Markdown a otro formato (DOCX, ODT, XML DocBook/JATS/TEI, etc.) vía Pandoc."""
-    _require_text_endpoint(request, text)
+    _csrf_check(request)
+    # _require_text_endpoint ya aplica auth + rate-limit (cubre /api/export) + tope.
+    role = _require_text_endpoint(request, text)
+    # Gate de capacidad: el rol mínimo (sin audio_zip ⇒ HUMANO) no dispara Pandoc
+    # para formatos binarios pesados (DOCX/ODT/EPUB), salvo override por env.
+    caps = auth.caps_for(role)
+    is_binary = (fmt or "").strip().lower() in _BINARY_EXPORT_FMTS
+    if is_binary and not caps.get("audio_zip") and not _HUMAN_EXPORT_BINARY:
+        _audit(request, role, "/api/export", f"export:{fmt}", "denied")
+        raise HTTPException(
+            status_code=403,
+            detail="Tu rol no puede exportar a formatos binarios (DOCX/ODT/EPUB). "
+                   "Probá HTML, LaTeX, RST o XML.")
     try:
         data, ext, mime = await asyncio.to_thread(export_mod.convert, text or "", fmt)
     except export_mod.ExportError as e:
+        _audit(request, role, "/api/export", f"export:{fmt}", "error")
         raise HTTPException(status_code=400, detail=str(e))
+    _audit(request, role, "/api/export", f"export:{fmt}", "ok")
     return Response(content=data, media_type=mime,
                     headers={"Content-Disposition": f'attachment; filename="documento.{ext}"',
                              "X-Export-Ext": ext})
@@ -903,6 +1114,7 @@ async def model_prices(request: Request):
 @app.post("/api/compact")
 async def compact_endpoint(request: Request, text: str = Form(...)):
     """Devuelve el Markdown compactado (menos tokens, mismo sentido) para descargar."""
+    _csrf_check(request)
     _require_text_endpoint(request, text)
     out = await asyncio.to_thread(llmprep_mod.compact, text or "")
     return Response(out, media_type="text/markdown; charset=utf-8",
@@ -915,6 +1127,7 @@ async def chunk_endpoint(request: Request, text: str = Form(...),
                          size: Optional[str] = Form(default=None)):
     """Parte el Markdown en chunks por presupuesto de tokens. Devuelve JSONL
     (una línea por chunk) listo para embeddings / vector DB."""
+    _csrf_check(request)
     _require_text_endpoint(request, text)
     if size:
         try:

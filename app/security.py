@@ -12,6 +12,8 @@ from threading import Lock
 from urllib.parse import urlparse
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import connection as _urllib3_connection
 
 log = logging.getLogger("markitdown.security")
 
@@ -48,10 +50,14 @@ def _ip_is_blocked(ip_str: str) -> bool:
     )
 
 
-def assert_public_url(url: str) -> None:
+def assert_public_url(url: str) -> list:
     """
     Valida que la URL sea http/https y que el host NO resuelva a una red interna.
     Lanza SecurityError si algo no cumple. (Anti-SSRF — C2/M5).
+
+    Devuelve la lista de IPs (str) a las que resolvió el host, ya validadas como
+    públicas. El llamador debe usar SOLO estas IPs para conectar (pinning),
+    evitando una segunda resolución DNS que habilitaría DNS rebinding / TOCTOU.
     """
     p = urlparse(url)
     if p.scheme not in ("http", "https"):
@@ -63,10 +69,50 @@ def assert_public_url(url: str) -> None:
         infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == "https" else 80))
     except socket.gaierror:
         raise SecurityError("No se pudo resolver el dominio.")
+    validated_ips = []
     for info in infos:
         ip_str = info[4][0]
         if _ip_is_blocked(ip_str):
             raise SecurityError("La URL apunta a una dirección interna o no permitida.")
+        if ip_str not in validated_ips:
+            validated_ips.append(ip_str)
+    if not validated_ips:
+        raise SecurityError("No se pudo resolver el dominio.")
+    return validated_ips
+
+
+class _PinnedIPAdapter(HTTPAdapter):
+    """
+    HTTPAdapter que fuerza la conexión a una IP previamente validada (pinning),
+    preservando el hostname original para Host header / SNI / verificación TLS.
+
+    Cierra la ventana de DNS rebinding / TOCTOU: la IP que se valida en
+    assert_public_url() es EXACTAMENTE la IP a la que se conecta, sin re-resolver.
+    """
+
+    def __init__(self, *args, pinned_ip: str = None, **kwargs):
+        self._pinned_ip = pinned_ip
+        super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        # urllib3 resuelve el hostname vía socket.getaddrinfo. Lo monkeypatcheamos
+        # SOLO durante este send para devolver la IP pinneada, manteniendo el
+        # hostname original en la URL (así Host header y SNI no cambian).
+        if not self._pinned_ip:
+            return super().send(request, **kwargs)
+
+        pinned = self._pinned_ip
+        orig_create_connection = _urllib3_connection.create_connection
+
+        def _pinned_create_connection(address, *a, **kw):
+            host, port = address[0], address[1]
+            return orig_create_connection((pinned, port), *a, **kw)
+
+        _urllib3_connection.create_connection = _pinned_create_connection
+        try:
+            return super().send(request, **kwargs)
+        finally:
+            _urllib3_connection.create_connection = orig_create_connection
 
 
 def safe_fetch(url: str, max_bytes: int, max_redirects: int = 3, timeout: int = 15) -> bytes:
@@ -77,29 +123,48 @@ def safe_fetch(url: str, max_bytes: int, max_redirects: int = 3, timeout: int = 
     """
     current = url
     for _ in range(max_redirects + 1):
-        assert_public_url(current)
-        resp = requests.get(
-            current, stream=True, timeout=timeout, allow_redirects=False,
-            headers={"User-Agent": "MarkItDown-Web/1.0"},
-        )
+        # Validamos y PINNEAMOS: la IP que validamos es la única a la que
+        # conectaremos. Sin segunda resolución DNS => sin ventana de rebinding.
+        validated_ips = assert_public_url(current)
+        pinned_ip = validated_ips[0]
+        p = urlparse(current)
+        scheme = (p.scheme or "").lower()
+
+        session = requests.Session()
+        adapter = _PinnedIPAdapter(pinned_ip=pinned_ip)
+        # Montamos el adapter sobre el esquema concreto para que toda conexión
+        # de este request use la IP pinneada.
+        session.mount(scheme + "://", adapter)
+        try:
+            resp = session.get(
+                current, stream=True, timeout=timeout, allow_redirects=False,
+                headers={"User-Agent": "MarkItDown-Web/1.0"},
+            )
+        except requests.RequestException as e:
+            session.close()
+            raise SecurityError("No se pudo descargar la URL remota.") from e
+
         if resp.is_redirect or resp.is_permanent_redirect:
             loc = resp.headers.get("location")
             resp.close()
+            session.close()
             if not loc:
                 raise SecurityError("Redirección inválida.")
             current = requests.compat.urljoin(current, loc)
             continue
         # Respuesta final: leer con tope de tamaño.
-        total = 0
-        chunks = []
-        for chunk in resp.iter_content(64 * 1024):
-            total += len(chunk)
-            if max_bytes and total > max_bytes:
-                resp.close()
-                raise SecurityError(f"El contenido remoto supera el límite de {max_bytes // (1024*1024)} MB.")
-            chunks.append(chunk)
-        resp.close()
-        return b"".join(chunks)
+        try:
+            total = 0
+            chunks = []
+            for chunk in resp.iter_content(64 * 1024):
+                total += len(chunk)
+                if max_bytes and total > max_bytes:
+                    raise SecurityError(f"El contenido remoto supera el límite de {max_bytes // (1024*1024)} MB.")
+                chunks.append(chunk)
+            return b"".join(chunks)
+        finally:
+            resp.close()
+            session.close()
     raise SecurityError("Demasiadas redirecciones.")
 
 

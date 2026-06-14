@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 
 log = logging.getLogger("markitdown.auth")
@@ -32,6 +33,61 @@ if not SECRET_KEY:
     log.warning("SECRET_KEY no definida: usando una temporal (las sesiones se "
                 "reinician al reiniciar y NO sirve con varios workers).")
 SECRET_BYTES = SECRET_KEY.encode()
+
+
+# --- Denylist de tokens (logout / revocación) --------------------------------
+# Reusa el Redis embebido opcional de security.py (compartido entre workers).
+# Si no hay Redis, cae a un dict en memoria por proceso (mejor que nada; en
+# multi-worker conviene Redis para que el logout valga en todos los workers).
+try:
+    from .security import _redis as _denylist_redis  # type: ignore
+except Exception:  # noqa: BLE001 — si security.py no expone el cliente, sin Redis
+    _denylist_redis = None
+
+_revoked_mem: dict = {}
+_revoked_lock = threading.Lock()
+
+
+def _revoked_mem_purge(now: float) -> None:
+    """Elimina entradas vencidas del denylist en memoria (best-effort)."""
+    expired = [j for j, exp in _revoked_mem.items() if exp <= now]
+    for j in expired:
+        _revoked_mem.pop(j, None)
+
+
+def revoke(jti: str, ttl: int = SESSION_TTL) -> None:
+    """
+    Marca un token (por su jti) como revocado hasta su expiración.
+    El TTL debe ser el tiempo restante hasta `exp`; si no se pasa, usa SESSION_TTL.
+    No lanza: la revocación es best-effort y nunca debe romper el logout.
+    """
+    if not jti:
+        return
+    ttl = max(1, int(ttl))
+    if _denylist_redis is not None:
+        try:
+            _denylist_redis.setex(f"revoked:{jti}", ttl, "1")
+            return
+        except Exception as e:  # noqa: BLE001 — si Redis falla, caemos a memoria
+            log.warning("Redis falló al revocar (%s): uso denylist en memoria.", e)
+    with _revoked_lock:
+        _revoked_mem[jti] = time.time() + ttl
+
+
+def is_revoked(jti: str) -> bool:
+    """True si el jti está en el denylist. Fail-open ante error de Redis."""
+    if not jti:
+        return False
+    if _denylist_redis is not None:
+        try:
+            return bool(_denylist_redis.exists(f"revoked:{jti}"))
+        except Exception as e:  # noqa: BLE001 — si Redis falla, consultamos memoria
+            log.warning("Redis falló al consultar revocación (%s): uso memoria.", e)
+    now = time.time()
+    with _revoked_lock:
+        _revoked_mem_purge(now)
+        exp = _revoked_mem.get(jti)
+        return exp is not None and exp > now
 
 
 def _env_int(name: str, default: int) -> int:
@@ -113,14 +169,22 @@ def _b64d(s: str) -> bytes:
 
 
 def make_token(role: str) -> str:
-    payload = {"role": role, "exp": int(time.time()) + SESSION_TTL}
+    payload = {
+        "role": role,
+        "exp": int(time.time()) + SESSION_TTL,
+        "jti": secrets.token_urlsafe(16),  # id único para revocación (logout)
+    }
     body = _b64e(json.dumps(payload, separators=(",", ":")).encode())
     sig = _b64e(hmac.new(SECRET_BYTES, body.encode(), hashlib.sha256).digest())
     return f"{body}.{sig}"
 
 
-def verify_token(token: str):
-    """Devuelve el rol si el token es válido y no expiró, si no None."""
+def _verified_payload(token: str):
+    """Valida firma + expiración y devuelve el payload (dict) o None.
+
+    No consulta el denylist: úsese sólo cuando se necesita el jti del propio
+    token (p. ej. en logout para revocarlo). Para autorizar usá verify_token.
+    """
     try:
         body, sig = token.split(".", 1)
         expected = _b64e(hmac.new(SECRET_BYTES, body.encode(), hashlib.sha256).digest())
@@ -129,10 +193,21 @@ def verify_token(token: str):
         payload = json.loads(_b64d(body))
         if payload.get("exp", 0) < time.time():
             return None
-        role = payload.get("role")
-        return role if role in ROLE_CAPS else None
+        if payload.get("role") not in ROLE_CAPS:
+            return None
+        return payload
     except Exception:
         return None
+
+
+def verify_token(token: str):
+    """Devuelve el rol si el token es válido, no expiró y no fue revocado; si no None."""
+    payload = _verified_payload(token)
+    if payload is None:
+        return None
+    if is_revoked(payload.get("jti")):
+        return None
+    return payload.get("role")
 
 
 def role_for_password(password: str):
@@ -173,6 +248,38 @@ def role_from_request(request):
     if not token:
         return None
     return verify_token(token)
+
+
+def _session_token_from_request(request):
+    """Token de sesión firmado (cookie o Bearer), ignorando el API token estático."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+    return token or None
+
+
+def revoke_request(request) -> bool:
+    """
+    Revoca el token de sesión del request (para /api/logout).
+    Inserta su jti en el denylist con TTL = tiempo restante hasta exp.
+    Devuelve True si revocó un token válido. No lanza (best-effort).
+    """
+    token = _session_token_from_request(request)
+    if not token:
+        return False
+    payload = _verified_payload(token)
+    if payload is None:
+        return False
+    jti = payload.get("jti")
+    if not jti:
+        return False
+    ttl = int(payload.get("exp", 0)) - int(time.time())
+    if ttl <= 0:
+        return True  # ya expiró; nada que revocar
+    revoke(jti, ttl)
+    return True
 
 
 def identity(request):

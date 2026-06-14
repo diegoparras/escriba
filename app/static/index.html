@@ -326,6 +326,13 @@
   .dl-go:disabled { opacity: .45; }
   /* Modal: nivel de censura */
   .rl-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* Botón de páginas por archivo (al lado del chip de estado) */
+  .pg-pick { display: inline-flex; align-items: center; gap: 5px; flex: none; cursor: pointer;
+    background: var(--card-2); border: 1px solid var(--border); border-radius: 999px;
+    padding: 4px 11px; font-size: 12.5px; color: var(--muted); line-height: 1.4;
+    transition: border-color .15s, color .15s, background .15s; }
+  .pg-pick:hover { border-color: var(--accent); color: var(--text); background: var(--bg-2); }
+  .pg-pick .pg-ico { width: 14px; height: 14px; }
   /* Asistente de selección de páginas */
   .pg-opt { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 9px 2px; margin: 0; font-size: 14.5px; }
   .pg-opt input { width: auto; }
@@ -549,7 +556,6 @@
         <div class="or" data-i18n="url.or">o pegá una URL o enlace de YouTube</div>
         <div class="row">
           <input id="urlInput" type="url" data-i18n-ph="url.ph" placeholder="https://ejemplo.com/articulo · PDF online · o https://youtu.be/… (transcripción)" />
-          <button id="openOptionsBtn" class="icon-btn opt-icon" type="button" data-i18n-title="adv.open" title="Opciones de conversión, IA y anonimización"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
           <button id="addUrlBtn" class="btn ghost hl-ok" data-i18n="url.add">Agregar</button>
         </div>
       </div>
@@ -657,12 +663,6 @@
           <option value="it-IT" data-i18n="dl.it">Italiano</option>
           <option value="de-DE" data-i18n="dl.de">Alemán</option>
         </select>
-      </div>
-      <div class="field" id="pagesField" style="margin-top:16px">
-        <label data-i18n="pages.label">Páginas a convertir (solo PDF)</label>
-        <button id="pagesBtn" type="button" class="es-trigger" style="margin-top:4px">
-          <span class="es-val" id="pagesSummary" data-i18n="pages.allShort">Todas las páginas</span>
-        </button>
       </div>
       <div class="field" id="ocrField" style="margin-top:16px">
         <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0">

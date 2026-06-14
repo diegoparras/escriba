@@ -294,6 +294,12 @@ function updateItemNode(it, root) {
   } else {
     cb.checked = it.selected !== false;
   }
+  // (e) botón de páginas: solo PDFs pendientes (en cola / error)
+  const wantPk = isPdfItem(it) && (it.status === "queued" || it.status === "error");
+  const pk = root.querySelector(".pg-pick");
+  if (!wantPk) { if (pk) pk.remove(); }
+  else if (!pk) { mountPagesPick(root, it); }
+  else { const sp = pk.querySelector("span"); if (sp) sp.textContent = pagesBtnLabel(it.pages || ""); }
 }
 
 function ensureQhead(q) {
@@ -339,9 +345,10 @@ function render() {
       q.insertAdjacentHTML("beforeend", itemHtml(it));
       root = document.getElementById("it" + it.id);
       root.querySelector(".item-top").addEventListener("click", (e) => {
-        if (e.target.closest(".x") || e.target.closest(".sel")) return;
+        if (e.target.closest(".x") || e.target.closest(".sel") || e.target.closest(".pg-pick")) return;
         if (it.status === "done") root.classList.toggle("open");
       });
+      root.querySelector(".pg-pick")?.addEventListener("click", (e) => { e.stopPropagation(); openPagesFor(it); });
       const cb = root.querySelector(".sel");
       if (cb) { cb.addEventListener("click", e => e.stopPropagation()); cb.addEventListener("change", () => { it.selected = cb.checked; updateSelUI(); }); }
       const x = root.querySelector(".x");
@@ -431,6 +438,7 @@ function itemHtml(it) {
         ${checkbox}
         ${fileChip(it.name, it.isUrl)}
         <div class="meta"><div class="name">${escapeHtml(it.name)}</div><div class="small">${escapeHtml(sub)}</div></div>
+        ${pagesPickHtml(it)}
         <span class="chip ${it.status}" id="chip${it.id}">${chip}</span>
         <button type="button" class="x" title="${escapeHtml(t("act.remove"))}" aria-label="${escapeHtml(t("act.remove"))}">✕</button>
       </div>
@@ -933,7 +941,7 @@ function convertOne(it) {
     const langVal = $("lang").value; if (langVal && langVal !== "auto") fd.append("lang", langVal);
     if (CAPS.ocr && $("ocrChk").checked) fd.append("ocr", "true");
     if (CAPS.advancedExtract && $("advChk").checked) fd.append("advanced", "true");
-    if (PAGES_SPEC) fd.append("pages", PAGES_SPEC);   // selección del asistente (solo aplica a PDF)
+    if (it.pages) fd.append("pages", it.pages);   // selección por-archivo del asistente (solo aplica a PDF)
     // Anonimización de PII (si está habilitada y el usuario eligió un modo).
     if (CAPS.anonimal) {
       const am = $("anonMode")?.value;
@@ -1231,7 +1239,6 @@ function openSettings(tab) {
   if (tab) document.querySelector(`#settingsTabs .tab[data-stab="${tab}"]`)?.click();
 }
 $("settingsBtn").addEventListener("click", () => openSettings());
-$("openOptionsBtn")?.addEventListener("click", () => openSettings("conv"));
 // Tabs de Configuración (General / Conversión / IA / Anonimización / YouTube).
 document.querySelectorAll("#settingsTabs .tab").forEach(tb => {
   tb.addEventListener("click", () => {
@@ -1310,14 +1317,16 @@ window.addEventListener("scroll", () => {
     }
     const s = $("langSelect"); if (s) s.value = I18N.lang;
     applyYtckMask();   // refrescar el label del toggle (Mostrar/Ocultar)
-    // El resumen de páginas: si hay una selección, re-escribir su etiqueta (data-i18n la pisó con "Todas").
-    const ps = $("pagesSummary"); if (ps && PAGES_SPEC) ps.textContent = pagesShortLabel(PAGES_SPEC);
   };
   I18N.apply();
 })();
 
-// ---------- Asistente de selección de páginas (solo PDF) ----------
-let PAGES_SPEC = "";   // "" = todas; "1-23" rango; "1,6,9" sueltas
+// ---------- Asistente de selección de páginas: POR ARCHIVO (solo PDF) ----------
+// Cada ítem guarda su propia selección en it.pages ("" = todas; "1-23" rango; "1,6,9" sueltas).
+let _pagesItem = null;       // ítem que se está editando en el modal
+const _pgChips = [];         // páginas sueltas del modal abierto
+
+const IC_PAGES = '<svg class="pg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
 
 function parsePagesSpec(spec) {
   // Devuelve {count} si la spec es válida (1-23 / 1:23 / 1,6,9 / combinaciones), o null.
@@ -1337,70 +1346,87 @@ function parsePagesSpec(spec) {
   return set.size ? { count: set.size } : null;
 }
 const pagesCount = (spec) => { const r = parsePagesSpec(spec); return r ? r.count : 0; };
-function pagesShortLabel(spec) {
-  return spec ? t("pages.someShort", { s: spec, n: pagesCount(spec) }) : t("pages.allShort");
+const isPdfItem = (it) => !it.isUrl && /\.pdf$/i.test(it.name || "");
+const pagesBtnLabel = (spec) => spec || t("pages.pickAll");   // compacto: "2-4" / "1,6,9" / "Todas"
+
+// El botoncito al lado del chip "En cola" (solo PDFs pendientes).
+function pagesPickInnerHtml(it) {
+  return `<button type="button" class="pg-pick" title="${escapeHtml(t("pages.label"))}">${IC_PAGES}<span>${escapeHtml(pagesBtnLabel(it.pages || ""))}</span></button>`;
+}
+function pagesPickHtml(it) {
+  return (isPdfItem(it) && (it.status === "queued" || it.status === "error")) ? pagesPickInnerHtml(it) : "";
+}
+function mountPagesPick(root, it) {
+  if (root.querySelector(".pg-pick")) return;
+  const chip = root.querySelector(".chip"); if (!chip) return;
+  chip.insertAdjacentHTML("beforebegin", pagesPickInnerHtml(it));
+  root.querySelector(".pg-pick").addEventListener("click", (e) => { e.stopPropagation(); openPagesFor(it); });
 }
 
-(function initPagesModal() {
-  const btn = $("pagesBtn");
-  if (!btn) return;
-  const chips = [];   // páginas sueltas (números)
-  const curMode = () => (document.querySelector('input[name="pgMode"]:checked') || {}).value || "all";
-  function setMode(mode) {
-    document.querySelectorAll('input[name="pgMode"]').forEach(r => { r.checked = (r.value === mode); });
-    $("pgRangeRow").hidden = mode !== "range";
-    $("pgSingleRow").hidden = mode !== "single";
-    updateSummary();
+const _pgMode = () => (document.querySelector('input[name="pgMode"]:checked') || {}).value || "all";
+function _pgSetMode(mode) {
+  document.querySelectorAll('input[name="pgMode"]').forEach(r => { r.checked = (r.value === mode); });
+  $("pgRangeRow").hidden = mode !== "range";
+  $("pgSingleRow").hidden = mode !== "single";
+  _pgUpdateSummary();
+}
+function _pgRenderChips() {
+  const box = $("pgChips");
+  box.innerHTML = _pgChips.slice().sort((a, b) => a - b).map(n =>
+    `<span class="pg-chip">${n}<button type="button" data-n="${n}" title="${t("llm.remove")}">✕</button></span>`).join("");
+  box.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    const i = _pgChips.indexOf(+b.dataset.n); if (i >= 0) _pgChips.splice(i, 1);
+    _pgRenderChips(); _pgUpdateSummary();
+  }));
+}
+function _pgBuildSpec() {
+  const m = _pgMode();
+  if (m === "range") {
+    let a = parseInt($("pgFrom").value, 10) || 1, b = parseInt($("pgTo").value, 10) || 1;
+    a = Math.max(1, a); b = Math.max(1, b); if (a > b) { [a, b] = [b, a]; }
+    return a === b ? String(a) : a + "-" + b;
   }
-  function renderChips() {
-    const box = $("pgChips");
-    box.innerHTML = chips.slice().sort((a, b) => a - b).map(n =>
-      `<span class="pg-chip">${n}<button type="button" data-n="${n}" title="${t("llm.remove")}">✕</button></span>`).join("");
-    box.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
-      const i = chips.indexOf(+b.dataset.n); if (i >= 0) chips.splice(i, 1);
-      renderChips(); updateSummary();
-    }));
+  if (m === "single") return [...new Set(_pgChips.filter(n => n >= 1))].sort((x, y) => x - y).join(",");
+  return "";
+}
+function _pgUpdateSummary() {
+  const spec = _pgBuildSpec(), el = $("pgSummary");
+  if (!spec) { el.textContent = t("pages.summaryAll"); $("pgApply").disabled = false; return; }
+  const n = pagesCount(spec);
+  el.textContent = n ? t("pages.summaryN", { n }) : t("pages.summaryEmpty");
+  $("pgApply").disabled = !n;
+}
+function _pgAddChip() {
+  const v = parseInt($("pgChipInput").value, 10);
+  if (v >= 1 && !_pgChips.includes(v)) { _pgChips.push(v); _pgRenderChips(); _pgUpdateSummary(); }
+  $("pgChipInput").value = ""; $("pgChipInput").focus();
+}
+function openPagesFor(it) {
+  _pagesItem = it; _pgChips.length = 0;
+  const spec = it.pages || "";
+  $("pgFrom").value = "1"; $("pgTo").value = "1";
+  if (!spec) { _pgSetMode("all"); }
+  else if (/^\d+(-\d+)?$/.test(spec)) {
+    const [a, b] = spec.split("-"); $("pgFrom").value = a; $("pgTo").value = b || a; _pgSetMode("range");
+  } else {
+    spec.split(",").forEach(x => { const n = +x; if (n >= 1 && !_pgChips.includes(n)) _pgChips.push(n); });
+    _pgRenderChips(); _pgSetMode("single");
   }
-  function buildSpec() {
-    const m = curMode();
-    if (m === "range") {
-      let a = parseInt($("pgFrom").value, 10) || 1, b = parseInt($("pgTo").value, 10) || 1;
-      a = Math.max(1, a); b = Math.max(1, b); if (a > b) { [a, b] = [b, a]; }
-      return a === b ? String(a) : a + "-" + b;
-    }
-    if (m === "single") return [...new Set(chips.filter(n => n >= 1))].sort((x, y) => x - y).join(",");
-    return "";
-  }
-  function updateSummary() {
-    const spec = buildSpec(), el = $("pgSummary");
-    if (!spec) { el.textContent = t("pages.summaryAll"); $("pgApply").disabled = false; return; }
-    const n = pagesCount(spec);
-    el.textContent = n ? t("pages.summaryN", { n }) : t("pages.summaryEmpty");
-    $("pgApply").disabled = !n;
-  }
-  function addChip() {
-    const v = parseInt($("pgChipInput").value, 10);
-    if (v >= 1 && !chips.includes(v)) { chips.push(v); renderChips(); updateSummary(); }
-    $("pgChipInput").value = ""; $("pgChipInput").focus();
-  }
-  btn.addEventListener("click", () => {
-    chips.length = 0;
-    if (!PAGES_SPEC) { setMode("all"); }
-    else if (/^\d+(-\d+)?$/.test(PAGES_SPEC)) {
-      const [a, b] = PAGES_SPEC.split("-"); $("pgFrom").value = a; $("pgTo").value = b || a; setMode("range");
-    } else {
-      PAGES_SPEC.split(",").forEach(x => { const n = +x; if (n >= 1 && !chips.includes(n)) chips.push(n); });
-      renderChips(); setMode("single");
-    }
-    openModal("pagesModal");
-  });
-  document.querySelectorAll('input[name="pgMode"]').forEach(r => r.addEventListener("change", () => setMode(r.value)));
-  ["pgFrom", "pgTo"].forEach(id => $(id).addEventListener("input", updateSummary));
-  $("pgChipAdd").addEventListener("click", addChip);
-  $("pgChipInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addChip(); } });
+  openModal("pagesModal");
+}
+
+(function wirePagesModal() {
+  if (!$("pgApply")) return;
+  document.querySelectorAll('input[name="pgMode"]').forEach(r => r.addEventListener("change", () => _pgSetMode(r.value)));
+  ["pgFrom", "pgTo"].forEach(id => $(id).addEventListener("input", _pgUpdateSummary));
+  $("pgChipAdd").addEventListener("click", _pgAddChip);
+  $("pgChipInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); _pgAddChip(); } });
   $("pgApply").addEventListener("click", () => {
-    PAGES_SPEC = buildSpec();
-    $("pagesSummary").textContent = pagesShortLabel(PAGES_SPEC);
+    if (_pagesItem) {
+      _pagesItem.pages = _pgBuildSpec();
+      const span = document.querySelector("#it" + _pagesItem.id + " .pg-pick span");
+      if (span) span.textContent = pagesBtnLabel(_pagesItem.pages || "");
+    }
     closeModal("pagesModal");
   });
 })();

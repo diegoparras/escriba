@@ -933,6 +933,8 @@ function convertOne(it) {
     const langVal = $("lang").value; if (langVal && langVal !== "auto") fd.append("lang", langVal);
     if (CAPS.ocr && $("ocrChk").checked) fd.append("ocr", "true");
     if (CAPS.advancedExtract && $("advChk").checked) fd.append("advanced", "true");
+    const pagesVal = $("pagesInput")?.value.trim();
+    if (pagesVal && parsePagesSpec(pagesVal)) fd.append("pages", pagesVal);   // solo aplica a PDF (el back lo ignora en otros formatos)
     // Anonimización de PII (si está habilitada y el usuario eligió un modo).
     if (CAPS.anonimal) {
       const am = $("anonMode")?.value;
@@ -1311,6 +1313,38 @@ window.addEventListener("scroll", () => {
     applyYtckMask();   // refrescar el label del toggle (Mostrar/Ocultar)
   };
   I18N.apply();
+})();
+
+// ---------- Selector de páginas (solo PDF): valida la sintaxis en vivo ----------
+function parsePagesSpec(spec) {
+  // Devuelve {count} si es válido (1-23 / 1:23 / 1,6,9 / combinaciones), o null si es inválido.
+  spec = (spec || "").replace(/\s+/g, "");
+  if (!spec) return null;
+  const set = new Set();
+  for (const part of spec.split(",")) {
+    if (!part) continue;
+    const m = part.match(/^(\d+)[-:](\d+)$/);
+    if (m) {
+      const a = +m[1], b = +m[2];
+      if (a < 1 || b < 1) return null;
+      for (let n = Math.min(a, b); n <= Math.max(a, b); n++) set.add(n);
+    } else if (/^\d+$/.test(part) && +part >= 1) {
+      set.add(+part);
+    } else { return null; }
+  }
+  return set.size ? { count: set.size } : null;
+}
+(function initPages() {
+  const inp = $("pagesInput"), hint = $("pagesHint");
+  if (!inp || !hint) return;
+  const upd = () => {
+    const v = inp.value.trim();
+    if (!v) { inp.style.borderColor = ""; hint.textContent = ""; return; }
+    const r = parsePagesSpec(v);
+    if (!r) { inp.style.borderColor = "#e5484d"; hint.textContent = t("pages.invalid"); }
+    else { inp.style.borderColor = ""; hint.textContent = t("pages.count", { n: r.count }); }
+  };
+  inp.addEventListener("input", upd);
 })();
 
 esEnhanceAll(document);   // dropdowns custom para todos los <select> estáticos

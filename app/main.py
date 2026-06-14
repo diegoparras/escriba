@@ -659,6 +659,48 @@ async def list_models(
         raise HTTPException(status_code=400, detail="No se pudieron obtener los modelos. Revisá la API key o el proveedor.")
 
 
+def _parse_pages(spec):
+    """Parsea el rango de páginas elegido por el usuario a una lista 1-based,
+    ordenada y sin repetidos. Acepta '1-23', '1:23', '1,6,9' y combinaciones
+    ('1-3,7,10-12'). Devuelve None si está vacío o si la sintaxis es inválida."""
+    if not spec or not spec.strip():
+        return None
+    out = set()
+    for part in spec.replace(" ", "").split(","):
+        if not part:
+            continue
+        m = re.match(r"^(\d+)[-:](\d+)$", part)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            if a < 1 or b < 1:
+                return None
+            out.update(range(min(a, b), max(a, b) + 1))
+        elif part.isdigit() and int(part) >= 1:
+            out.add(int(part))
+        else:
+            return None
+    return sorted(out) or None
+
+
+def _pdf_subset(path, sel):
+    """Crea un PDF nuevo con SOLO las páginas (1-based) que existan en el original.
+    Devuelve el path del nuevo temporal, o None si ninguna página pedida existe."""
+    import fitz
+    doc = fitz.open(path)
+    try:
+        n = doc.page_count
+        keep = [p - 1 for p in sel if 1 <= p <= n]
+        if not keep:
+            return None
+        doc.select(keep)
+        fd, out = tempfile.mkstemp(suffix=".pdf")
+        os.close(fd)
+        doc.save(out)
+        return out
+    finally:
+        doc.close()
+
+
 @app.post("/api/convert")
 async def convert(
     request: Request,
@@ -671,6 +713,7 @@ async def convert(
     lang: Optional[str] = Form(default=None),
     ocr: Optional[str] = Form(default=None),
     advanced: Optional[str] = Form(default=None),
+    pages: Optional[str] = Form(default=None),
     yt_cookies: Optional[str] = Form(default=None),
     anonymize: Optional[str] = Form(default=None),
     anon_strict: Optional[str] = Form(default=None),
@@ -765,6 +808,20 @@ async def convert(
             data = await _read_capped(file, eff_max)
             tmp_path = _write_temp(data, _safe_suffix(file.filename or ""))
             tess = ocr_mod.resolve_tess_langs(lang)
+            # Selección de páginas (solo aplica a PDF): recorta el documento a las
+            # páginas pedidas ANTES de OCR/extracción/censura, así todo opera sobre ellas.
+            if pages and ext == "pdf":
+                sel = _parse_pages(pages)
+                if sel is None:
+                    raise HTTPException(status_code=400, detail="Rango de páginas inválido. Usá, por ejemplo, 1-23 o 1,6,9.")
+                sub = await asyncio.to_thread(_pdf_subset, tmp_path, sel)
+                if sub is None:
+                    raise HTTPException(status_code=400, detail="Ninguna de las páginas pedidas existe en el PDF.")
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                tmp_path = sub
             if is_media:
                 # Tope de duración (salvo DIOS). 0 = sin límite.
                 if not caps["allow_internal"] and MAX_MEDIA_MINUTES:

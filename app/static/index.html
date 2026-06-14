@@ -646,6 +646,12 @@
           <option value="de-DE" data-i18n="dl.de">Alemán</option>
         </select>
       </div>
+      <div class="field" id="pagesField" style="margin-top:16px">
+        <label for="pagesInput" data-i18n="pages.label">Páginas a convertir (solo PDF)</label>
+        <input id="pagesInput" type="text" inputmode="numeric" autocomplete="off"
+               data-i18n-ph="pages.ph" placeholder="ej. 1-23 o 1,6,9  ·  vacío = todas" />
+        <div class="adv-note" id="pagesHint"></div>
+      </div>
       <div class="field" id="ocrField" style="margin-top:16px">
         <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0">
           <input id="ocrChk" type="checkbox" style="width:auto" />

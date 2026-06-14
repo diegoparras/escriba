@@ -933,8 +933,7 @@ function convertOne(it) {
     const langVal = $("lang").value; if (langVal && langVal !== "auto") fd.append("lang", langVal);
     if (CAPS.ocr && $("ocrChk").checked) fd.append("ocr", "true");
     if (CAPS.advancedExtract && $("advChk").checked) fd.append("advanced", "true");
-    const pagesVal = $("pagesInput")?.value.trim();
-    if (pagesVal && parsePagesSpec(pagesVal)) fd.append("pages", pagesVal);   // solo aplica a PDF (el back lo ignora en otros formatos)
+    if (PAGES_SPEC) fd.append("pages", PAGES_SPEC);   // selección del asistente (solo aplica a PDF)
     // Anonimización de PII (si está habilitada y el usuario eligió un modo).
     if (CAPS.anonimal) {
       const am = $("anonMode")?.value;
@@ -1311,13 +1310,17 @@ window.addEventListener("scroll", () => {
     }
     const s = $("langSelect"); if (s) s.value = I18N.lang;
     applyYtckMask();   // refrescar el label del toggle (Mostrar/Ocultar)
+    // El resumen de páginas: si hay una selección, re-escribir su etiqueta (data-i18n la pisó con "Todas").
+    const ps = $("pagesSummary"); if (ps && PAGES_SPEC) ps.textContent = pagesShortLabel(PAGES_SPEC);
   };
   I18N.apply();
 })();
 
-// ---------- Selector de páginas (solo PDF): valida la sintaxis en vivo ----------
+// ---------- Asistente de selección de páginas (solo PDF) ----------
+let PAGES_SPEC = "";   // "" = todas; "1-23" rango; "1,6,9" sueltas
+
 function parsePagesSpec(spec) {
-  // Devuelve {count} si es válido (1-23 / 1:23 / 1,6,9 / combinaciones), o null si es inválido.
+  // Devuelve {count} si la spec es válida (1-23 / 1:23 / 1,6,9 / combinaciones), o null.
   spec = (spec || "").replace(/\s+/g, "");
   if (!spec) return null;
   const set = new Set();
@@ -1328,23 +1331,78 @@ function parsePagesSpec(spec) {
       const a = +m[1], b = +m[2];
       if (a < 1 || b < 1) return null;
       for (let n = Math.min(a, b); n <= Math.max(a, b); n++) set.add(n);
-    } else if (/^\d+$/.test(part) && +part >= 1) {
-      set.add(+part);
-    } else { return null; }
+    } else if (/^\d+$/.test(part) && +part >= 1) { set.add(+part); }
+    else { return null; }
   }
   return set.size ? { count: set.size } : null;
 }
-(function initPages() {
-  const inp = $("pagesInput"), hint = $("pagesHint");
-  if (!inp || !hint) return;
-  const upd = () => {
-    const v = inp.value.trim();
-    if (!v) { inp.style.borderColor = ""; hint.textContent = ""; return; }
-    const r = parsePagesSpec(v);
-    if (!r) { inp.style.borderColor = "#e5484d"; hint.textContent = t("pages.invalid"); }
-    else { inp.style.borderColor = ""; hint.textContent = t("pages.count", { n: r.count }); }
-  };
-  inp.addEventListener("input", upd);
+const pagesCount = (spec) => { const r = parsePagesSpec(spec); return r ? r.count : 0; };
+function pagesShortLabel(spec) {
+  return spec ? t("pages.someShort", { s: spec, n: pagesCount(spec) }) : t("pages.allShort");
+}
+
+(function initPagesModal() {
+  const btn = $("pagesBtn");
+  if (!btn) return;
+  const chips = [];   // páginas sueltas (números)
+  const curMode = () => (document.querySelector('input[name="pgMode"]:checked') || {}).value || "all";
+  function setMode(mode) {
+    document.querySelectorAll('input[name="pgMode"]').forEach(r => { r.checked = (r.value === mode); });
+    $("pgRangeRow").hidden = mode !== "range";
+    $("pgSingleRow").hidden = mode !== "single";
+    updateSummary();
+  }
+  function renderChips() {
+    const box = $("pgChips");
+    box.innerHTML = chips.slice().sort((a, b) => a - b).map(n =>
+      `<span class="pg-chip">${n}<button type="button" data-n="${n}" title="${t("llm.remove")}">✕</button></span>`).join("");
+    box.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+      const i = chips.indexOf(+b.dataset.n); if (i >= 0) chips.splice(i, 1);
+      renderChips(); updateSummary();
+    }));
+  }
+  function buildSpec() {
+    const m = curMode();
+    if (m === "range") {
+      let a = parseInt($("pgFrom").value, 10) || 1, b = parseInt($("pgTo").value, 10) || 1;
+      a = Math.max(1, a); b = Math.max(1, b); if (a > b) { [a, b] = [b, a]; }
+      return a === b ? String(a) : a + "-" + b;
+    }
+    if (m === "single") return [...new Set(chips.filter(n => n >= 1))].sort((x, y) => x - y).join(",");
+    return "";
+  }
+  function updateSummary() {
+    const spec = buildSpec(), el = $("pgSummary");
+    if (!spec) { el.textContent = t("pages.summaryAll"); $("pgApply").disabled = false; return; }
+    const n = pagesCount(spec);
+    el.textContent = n ? t("pages.summaryN", { n }) : t("pages.summaryEmpty");
+    $("pgApply").disabled = !n;
+  }
+  function addChip() {
+    const v = parseInt($("pgChipInput").value, 10);
+    if (v >= 1 && !chips.includes(v)) { chips.push(v); renderChips(); updateSummary(); }
+    $("pgChipInput").value = ""; $("pgChipInput").focus();
+  }
+  btn.addEventListener("click", () => {
+    chips.length = 0;
+    if (!PAGES_SPEC) { setMode("all"); }
+    else if (/^\d+(-\d+)?$/.test(PAGES_SPEC)) {
+      const [a, b] = PAGES_SPEC.split("-"); $("pgFrom").value = a; $("pgTo").value = b || a; setMode("range");
+    } else {
+      PAGES_SPEC.split(",").forEach(x => { const n = +x; if (n >= 1 && !chips.includes(n)) chips.push(n); });
+      renderChips(); setMode("single");
+    }
+    openModal("pagesModal");
+  });
+  document.querySelectorAll('input[name="pgMode"]').forEach(r => r.addEventListener("change", () => setMode(r.value)));
+  ["pgFrom", "pgTo"].forEach(id => $(id).addEventListener("input", updateSummary));
+  $("pgChipAdd").addEventListener("click", addChip);
+  $("pgChipInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addChip(); } });
+  $("pgApply").addEventListener("click", () => {
+    PAGES_SPEC = buildSpec();
+    $("pagesSummary").textContent = pagesShortLabel(PAGES_SPEC);
+    closeModal("pagesModal");
+  });
 })();
 
 esEnhanceAll(document);   // dropdowns custom para todos los <select> estáticos

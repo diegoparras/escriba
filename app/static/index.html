@@ -326,6 +326,18 @@
   .dl-go:disabled { opacity: .45; }
   /* Modal: nivel de censura */
   .rl-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* Asistente de selección de páginas */
+  .pg-opt { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 9px 2px; margin: 0; font-size: 14.5px; }
+  .pg-opt input { width: auto; }
+  .pg-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px 28px; color: var(--muted); font-size: 13.5px; }
+  .pg-sub input[type="number"] { width: 86px; text-align: center; }
+  .pg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pg-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--card-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 6px 3px 11px; font-size: 13px; color: var(--text); }
+  .pg-chip button { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 999px; }
+  .pg-chip button:hover { background: var(--border); color: var(--text); }
+  .pg-summary { margin-top: 14px; padding: 10px 13px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 7%, var(--card-2));
+    border: 1px solid var(--hairline); color: var(--text); font-size: 13.5px; font-weight: 500; }
   .rl-card { display: flex; flex-direction: column; gap: 5px; text-align: left; cursor: pointer;
     background: var(--card-2); border: 1.5px solid var(--border); border-radius: 12px; padding: 14px;
     transition: border-color .15s, background .15s; }
@@ -647,10 +659,10 @@
         </select>
       </div>
       <div class="field" id="pagesField" style="margin-top:16px">
-        <label for="pagesInput" data-i18n="pages.label">Páginas a convertir (solo PDF)</label>
-        <input id="pagesInput" type="text" inputmode="numeric" autocomplete="off"
-               data-i18n-ph="pages.ph" placeholder="ej. 1-23 o 1,6,9  ·  vacío = todas" />
-        <div class="adv-note" id="pagesHint"></div>
+        <label data-i18n="pages.label">Páginas a convertir (solo PDF)</label>
+        <button id="pagesBtn" type="button" class="es-trigger" style="margin-top:4px">
+          <span class="es-val" id="pagesSummary" data-i18n="pages.allShort">Todas las páginas</span>
+        </button>
       </div>
       <div class="field" id="ocrField" style="margin-top:16px">
         <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0">
@@ -820,6 +832,41 @@
   </div>
 </div>
 
+<div class="modal-backdrop hidden" id="pagesModal" data-close>
+  <div class="modal" style="width:min(520px,96vw)" role="dialog" aria-modal="true" aria-labelledby="pagesModalTitle">
+    <div class="modal-head">
+      <h3 id="pagesModalTitle" data-i18n="pages.title">Páginas a convertir</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <p class="adv-note" style="margin:0 0 14px" data-i18n="pages.modalIntro">Elegí qué páginas del PDF convertir. (Solo aplica a archivos PDF.)</p>
+
+    <label class="pg-opt"><input type="radio" name="pgMode" value="all" checked />
+      <span data-i18n="pages.modeAll">Todo el documento</span></label>
+
+    <label class="pg-opt"><input type="radio" name="pgMode" value="range" />
+      <span data-i18n="pages.modeRange">Un rango de páginas</span></label>
+    <div class="pg-sub" id="pgRangeRow" hidden>
+      <span data-i18n="pages.from">Desde</span>
+      <input id="pgFrom" type="number" min="1" value="1" />
+      <span data-i18n="pages.to">hasta</span>
+      <input id="pgTo" type="number" min="1" value="1" />
+    </div>
+
+    <label class="pg-opt"><input type="radio" name="pgMode" value="single" />
+      <span data-i18n="pages.modeSingle">Páginas sueltas</span></label>
+    <div class="pg-sub" id="pgSingleRow" hidden>
+      <div id="pgChips" class="pg-chips"></div>
+      <input id="pgChipInput" type="number" min="1" data-i18n-ph="pages.addPh" placeholder="N° de página" />
+      <button id="pgChipAdd" type="button" class="btn ghost sm" data-i18n="pages.add">Agregar</button>
+    </div>
+
+    <div class="pg-summary" id="pgSummary" data-i18n="pages.summaryAll">Se convertirá el documento completo.</div>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <button id="pgApply" class="btn" type="button" data-i18n="pages.apply">Aplicar</button>
+      <button class="btn ghost" type="button" data-close data-i18n="rp.cancel">Cancelar</button>
+    </div>
+  </div>
+</div>
 <div class="modal-backdrop hidden" id="redactLevelModal" data-close>
   <div class="modal" style="width:min(540px,96vw)" role="dialog" aria-modal="true" aria-labelledby="redactLevelModalTitle">
     <div class="modal-head">

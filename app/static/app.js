@@ -1395,8 +1395,16 @@ function _pgBuildSpec() {
   if (m === "single") return [...new Set(_pgChips.filter(n => n >= 1))].sort((x, y) => x - y).join(",");
   return "";
 }
+function _pgCommit(spec) {
+  // Guarda la selección EN VIVO en el ítem y refleja el badge al instante.
+  // No depende del botón "Aplicar" (que en algunos navegadores no disparaba).
+  if (!_pagesItem) return;
+  _pagesItem.pages = spec;
+  if (_pagesBtnEl) _pagesBtnEl.innerHTML = IC_PAGES + "<span>" + escapeHtml(pagesBtnLabel(spec)) + "</span>";
+}
 function _pgUpdateSummary() {
   const spec = _pgBuildSpec(), el = $("pgSummary");
+  _pgCommit(spec);   // guardado en vivo
   if (!spec) { el.textContent = t("pages.summaryAll"); $("pgApply").disabled = false; return; }
   const n = pagesCount(spec);
   el.textContent = n ? t("pages.summaryN", { n }) : t("pages.summaryEmpty");
@@ -1423,8 +1431,7 @@ async function _pgLoadCount(it) {
     it._pageCount = (await r.json()).pages || 0;
   } catch { it._pageCount = 0; }
   if (_pagesItem === it) {   // el modal sigue abierto para este archivo
-    _pgSetTotal(it._pageCount);
-    if (it._pageCount > 0 && !it.pages) $("pgTo").value = it._pageCount;   // default lindo si elige "rango"
+    _pgSetTotal(it._pageCount);   // solo muestra el total + fija el max; NO toca lo que el usuario eligió
   }
 }
 function openPagesFor(it, btnEl) {

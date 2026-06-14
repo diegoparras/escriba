@@ -1380,10 +1380,11 @@ function _pgSetMode(mode) {
 }
 function _pgRenderChips() {
   const box = $("pgChips");
-  box.innerHTML = _pgChips.slice().sort((a, b) => a - b).map(n =>
-    `<span class="pg-chip">${n}<button type="button" data-n="${n}" title="${t("llm.remove")}">✕</button></span>`).join("");
+  const startOf = (s) => parseInt(s, 10) || 0;   // ordena por la primera página
+  box.innerHTML = _pgChips.slice().sort((a, b) => startOf(a) - startOf(b)).map(s =>
+    `<span class="pg-chip">${escapeHtml(s)}<button type="button" data-c="${escapeHtml(s)}" title="${t("llm.remove")}">✕</button></span>`).join("");
   box.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
-    const i = _pgChips.indexOf(+b.dataset.n); if (i >= 0) _pgChips.splice(i, 1);
+    const i = _pgChips.indexOf(b.dataset.c); if (i >= 0) _pgChips.splice(i, 1);
     _pgRenderChips(); _pgUpdateSummary();
   }));
 }
@@ -1394,7 +1395,7 @@ function _pgBuildSpec() {
     a = Math.max(1, a); b = Math.max(1, b); if (a > b) { [a, b] = [b, a]; }
     return a === b ? String(a) : a + "-" + b;
   }
-  if (m === "single") return [...new Set(_pgChips.filter(n => n >= 1))].sort((x, y) => x - y).join(",");
+  if (m === "single") return _pgChips.join(",");   // mezcla sueltas y rangos: "1,2,5-67"
   return "";
 }
 function _pgCommit(spec) {
@@ -1413,9 +1414,19 @@ function _pgUpdateSummary() {
   $("pgApply").disabled = !n;
 }
 function _pgAddChip() {
-  if (_pgMode() !== "single") _pgSetMode("single");   // tocar "Agregar" activa el modo sueltas
-  const v = parseInt($("pgChipInput").value, 10);
-  if (v >= 1 && !_pgChips.includes(v)) { _pgChips.push(v); _pgRenderChips(); }
+  if (_pgMode() !== "single") _pgSetMode("single");   // tocar "Agregar" activa el modo sueltas/rangos
+  const raw = ($("pgChipInput").value || "").trim().replace(/\s+/g, "");
+  let chip = null;
+  if (/^\d+$/.test(raw) && +raw >= 1) {
+    chip = raw;                                        // página suelta: "7"
+  } else {
+    const m = raw.match(/^(\d+)[-:](\d+)$/);           // rango: "5-67" o "5:67"
+    if (m && +m[1] >= 1 && +m[2] >= 1) {
+      let a = +m[1], b = +m[2]; if (a > b) { [a, b] = [b, a]; }
+      chip = a === b ? String(a) : a + "-" + b;
+    }
+  }
+  if (chip && !_pgChips.includes(chip)) { _pgChips.push(chip); _pgRenderChips(); }
   _pgUpdateSummary();
   $("pgChipInput").value = ""; $("pgChipInput").focus();
 }
@@ -1448,7 +1459,7 @@ function openPagesFor(it, btnEl) {
   else if (/^\d+(-\d+)?$/.test(spec)) {
     const [a, b] = spec.split("-"); $("pgFrom").value = a; $("pgTo").value = b || a; _pgSetMode("range");
   } else {
-    spec.split(",").forEach(x => { const n = +x; if (n >= 1 && !_pgChips.includes(n)) _pgChips.push(n); });
+    spec.split(",").forEach(tok => { tok = tok.trim(); if (tok && !_pgChips.includes(tok)) _pgChips.push(tok); });
     _pgRenderChips(); _pgSetMode("single");
   }
   openModal("pagesModal");

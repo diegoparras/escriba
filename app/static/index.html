@@ -241,6 +241,39 @@
   .item-body { display: none; border-top: 1px solid var(--border); padding: 15px 17px; }
   .item.open .item-body { display: block; }
   .resbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .export-sel { width: auto; min-width: 120px; padding: 7px 11px; font-size: 13px; }
+  /* Panel LLM */
+  .llm-panel { background: var(--card-2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 15px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .llm-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px 16px; }
+  .llm-tok { font-size: 13px; color: var(--muted); }
+  .llm-tok b { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; margin-right: 3px; }
+  .llm-meta { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .llm-link { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 12px;
+    font-weight: 600; padding: 0; }
+  .llm-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+  /* tabla de modelos */
+  .llm-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .llm-tbl th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); font-weight: 600; padding: 0 8px 6px 0; border-bottom: 1px solid var(--border); }
+  .llm-tbl td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .llm-tbl tr:last-child td { border-bottom: 0; }
+  .lm-name { font-weight: 550; color: var(--text); }
+  .lm-cost { font-variant-numeric: tabular-nums; color: var(--muted-2); white-space: nowrap; }
+  .llm-fit { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+    padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .llm-fit.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+  .llm-fit.no { color: var(--err); background: color-mix(in srgb, var(--err) 13%, transparent); }
+  .lm-rm { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px;
+    padding: 2px 4px; border-radius: 6px; transition: color .15s, background .15s; }
+  .lm-rm:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+  .llm-add { width: auto; min-width: 200px; align-self: flex-start; font-size: 13px; padding: 7px 11px; }
+  .llm-warn { display: flex; gap: 7px; font-size: 12.5px; color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+    border-radius: 9px; padding: 8px 11px; line-height: 1.4; }
+  .llm-warn b { color: var(--warn); }
   .tabs { display: flex; gap: 6px; }
   .tab { font-size: 13px; padding: 7px 13px; border-radius: 10px; cursor: pointer; color: var(--muted); border: 1px solid transparent; }
   .tab:hover { color: var(--text); }
@@ -336,6 +369,20 @@
   .fmt-chips { display: flex; flex-wrap: wrap; gap: 7px; }
   .about-row { display: flex; gap: 8px; margin: 6px 0; font-size: 14px; }
   .about-row b { min-width: 90px; color: var(--muted); font-weight: 600; }
+  /* Vista previa de censura */
+  .rp-cfg { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted);
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; margin: 10px 0 12px; }
+  .rp-cfg b { color: var(--text); font-weight: 600; }
+  .rp-all { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); margin: 0 2px 8px; cursor: pointer; }
+  .rp-list { max-height: 44vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .rp-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; cursor: pointer; }
+  .rp-row:hover { background: var(--card); }
+  .rp-row:last-child { border-bottom: 0; }
+  .rp-type { flex-shrink: 0; min-width: 96px; font-size: 11px; font-weight: 600; color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 999px; padding: 3px 10px; text-align: center; }
+  .rp-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .rp-cnt { flex-shrink: 0; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .rp-empty { padding: 20px; text-align: center; color: var(--ok); font-size: 14px; }
 
   #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
   footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 48px; }
@@ -545,6 +592,12 @@
           <span data-i18n="ocr.label">Forzar OCR (PDFs escaneados o con acentos rotos tipo LaTeX) — usa el idioma elegido. Más lento.</span>
         </label>
       </div>
+      <div class="field hidden" id="advField" style="margin-top:12px">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0">
+          <input id="advChk" type="checkbox" style="width:auto" />
+          <span data-i18n="adv.extract">Extracción avanzada de PDF (estructura, títulos y orden de lectura). Más lento.</span>
+        </label>
+      </div>
     </div>
 
     <div class="stab-panel hidden" data-stab-panel="ai">
@@ -669,6 +722,34 @@
       <span id="rehyInfo" class="adv-note" style="align-self:center"></span>
     </div>
     <div class="preview" id="rehyOut" style="max-height:42vh;white-space:pre-wrap"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="redactPreviewModal" data-close>
+  <div class="modal" style="width:min(640px,96vw)">
+    <div class="modal-head">
+      <h3 data-i18n="rp.title">Vista previa de censura</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <p class="adv-note" style="margin:0 0 4px">
+      <span data-i18n="rp.intro">Esto es lo que se va a tachar con tu configuración actual.</span>
+      <span data-i18n="rp.tooMuch">¿Tacha de más? Ajustá los detectores.</span>
+    </p>
+    <div class="rp-cfg">
+      <span>⚙ <b data-i18n="rp.mode">Modo</b>: <span id="rpStrict">—</span></span>
+      <span>🎚 <b data-i18n="rp.detectors">Detectores</b>: <span id="rpDet">—</span></span>
+      <span>✏️ <b id="rpCount">0</b> <span data-i18n="rp.detected">detectados</span></span>
+    </div>
+    <label class="rp-all" id="rpAllWrap" style="display:none">
+      <input type="checkbox" id="rpAll" checked style="width:auto" />
+      <span data-i18n="rp.all">Seleccionar todo</span> · <span id="rpSel">0</span> <span data-i18n="rp.selected">seleccionados</span>
+    </label>
+    <div class="rp-list" id="rpList"></div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button id="rpConfirm" class="btn" type="button" data-i18n="rp.download">Descargar PDF censurado</button>
+      <button id="rpAdjust" class="btn ghost" type="button" data-i18n="rp.adjust">Ajustar detectores</button>
+      <button class="btn ghost" type="button" data-close data-i18n="rp.cancel">Cancelar</button>
+    </div>
   </div>
 </div>
 

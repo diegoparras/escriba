@@ -10,6 +10,7 @@ Seguridad + roles:
 """
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -35,7 +36,11 @@ from . import anon_rules as anon_rules_mod
 from . import anonimal as anonimal_mod
 from . import auth
 from . import detectors as detectors_mod
+from . import export as export_mod
+from . import llmprep as llmprep_mod
 from . import ocr as ocr_mod
+from . import odl as odl_mod
+from . import pricing as pricing_mod
 from . import pdf_extract
 from . import redact as redact_mod
 from . import transcribe as tr_mod
@@ -287,6 +292,8 @@ def _caps_payload(role: str) -> dict:
     d["anonimal"] = anonimal_mod.available()   # ¿está habilitada la anonimización de PII?
     if d["anonimal"]:
         d["detectors"] = detectors_mod.catalog()   # catálogo para los checkboxes de la UI
+    d["export"] = export_mod.catalog() if export_mod.available() else []   # formatos de salida (Pandoc)
+    d["advancedExtract"] = odl_mod.available()   # extracción avanzada de PDF (OpenDataLoader)
     return d
 
 
@@ -429,6 +436,7 @@ async def convert(
     llm_provider: Optional[str] = Form(default=None),
     lang: Optional[str] = Form(default=None),
     ocr: Optional[str] = Form(default=None),
+    advanced: Optional[str] = Form(default=None),
     yt_cookies: Optional[str] = Form(default=None),
     anonymize: Optional[str] = Form(default=None),
     anon_strict: Optional[str] = Form(default=None),
@@ -547,9 +555,16 @@ async def convert(
                 out_md = await asyncio.to_thread(ocr_mod.ocr_image, tmp_path, tess)
                 ocr_applied = True
             elif ext == "pdf":
-                # PDF: extraemos con PyMuPDF (respeta /Rotate y contenido girado;
-                # pdfminer devolvía las hojas apaisadas al revés).
-                out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, tmp_path)
+                # PDF: extracción AVANZADA opt-in (OpenDataLoader: títulos + orden
+                # de lectura + tablas) o la clásica con PyMuPDF (respeta rotación).
+                use_adv = str(advanced).lower() in ("1", "true", "yes", "on") and odl_mod.available()
+                if use_adv:
+                    try:
+                        out_md = await asyncio.to_thread(odl_mod.extract_markdown, tmp_path)
+                    except odl_mod.ODLError:
+                        out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, tmp_path)
+                else:
+                    out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, tmp_path)
                 title = pdf_extract.pdf_title(tmp_path)
                 # Si se va a anonimizar y es un comprobante, capturamos los campos
                 # PII por layout (etiqueta→valor) AHORA, con el PDF todavía en disco.
@@ -628,10 +643,19 @@ async def convert(
 
     STATS["conversions"] += 1
     STATS["chars_out"] += len(markdown)
+    # Panel LLM (tokens / ahorro / costo / contexto / inyección). Nunca debe
+    # romper la conversión: si algo falla, va None y la UI no muestra el panel.
+    llm_panel = None
+    try:
+        if markdown.strip():
+            llm_panel = await asyncio.to_thread(llmprep_mod.analyze, markdown, pii_count or 0)
+    except Exception:  # noqa: BLE001
+        log.exception("Panel LLM falló (no crítico)")
     return JSONResponse({
         "source": source_name,
         "title": title,
         "markdown": markdown,
+        "llm": llm_panel,
         "chars": len(markdown),
         "words": len(markdown.split()),
         "elapsed_ms": int((time.time() - t0) * 1000),
@@ -665,9 +689,14 @@ async def redact_endpoint(
     anon_strict: Optional[str] = Form(default=None),
     anon_rules: Optional[str] = Form(default=None),
     anon_detectors: Optional[str] = Form(default=None),
+    preview: Optional[str] = Form(default=None),
+    only: Optional[str] = Form(default=None),
 ):
     """Censura VISUAL: devuelve el PDF con el PII tachado (redacción real:
-    el texto y los píxeles debajo de cada caja se eliminan del archivo)."""
+    el texto y los píxeles debajo de cada caja se eliminan del archivo).
+    Con preview=1 devuelve JSON con la LISTA de lo que se tacharía (sin generar
+    el PDF), para confirmar antes de descargar."""
+    is_preview = str(preview).lower() in ("1", "true", "yes", "on")
     role = _require(request)
     caps = auth.caps_for(role)
     if not anonimal_mod.available():
@@ -708,8 +737,26 @@ async def redact_endpoint(
             ocr_out = await asyncio.to_thread(ocr_mod.ocr_pdf, pdf_path, tess)
             extra_tmp.append(ocr_out)
             pdf_path = ocr_out
+        if is_preview:
+            ents = await asyncio.to_thread(
+                redact_mod.entities_pdf, pdf_path, strict, user_rules, det_ids)
+            return JSONResponse({
+                "entities": ents,
+                "count": sum(e["count"] for e in ents),
+                "unique": len(ents),
+                "strict": strict,
+                "detectors": (len(det_ids) if det_ids is not None else None),
+            })
+        only_list = None
+        if only:
+            try:
+                parsed = json.loads(only)
+                if isinstance(parsed, list):
+                    only_list = [str(x) for x in parsed]
+            except (ValueError, TypeError):
+                only_list = None
         pdf_bytes, entities = await asyncio.to_thread(
-            redact_mod.redact_pdf, pdf_path, strict, user_rules, det_ids)
+            redact_mod.redact_pdf, pdf_path, strict, user_rules, det_ids, only_list)
     except HTTPException:
         STATS["errors"] += 1
         raise
@@ -741,6 +788,58 @@ async def redact_endpoint(
             "X-Redacted-Entities": str(entities),
         },
     )
+
+
+@app.post("/api/export")
+async def export_endpoint(request: Request, text: str = Form(...), fmt: str = Form(...)):
+    """Exporta el Markdown a otro formato (DOCX, ODT, XML DocBook/JATS/TEI, etc.) vía Pandoc."""
+    _require(request)
+    try:
+        data, ext, mime = await asyncio.to_thread(export_mod.convert, text or "", fmt)
+    except export_mod.ExportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return Response(content=data, media_type=mime,
+                    headers={"Content-Disposition": f'attachment; filename="documento.{ext}"',
+                             "X-Export-Ext": ext})
+
+
+@app.get("/api/model_prices")
+async def model_prices(request: Request):
+    """Catálogo de modelos + precios EN VIVO (OpenRouter, cacheado) para el Panel LLM."""
+    _require(request)
+    data, live = await asyncio.to_thread(pricing_mod.catalog)
+    return {"models": data, "defaults": pricing_mod.DEFAULTS, "live": live}
+
+
+@app.post("/api/compact")
+async def compact_endpoint(request: Request, text: str = Form(...)):
+    """Devuelve el Markdown compactado (menos tokens, mismo sentido) para descargar."""
+    _require(request)
+    out = await asyncio.to_thread(llmprep_mod.compact, text or "")
+    return Response(out, media_type="text/markdown; charset=utf-8",
+                    headers={"X-Tokens-Before": str(llmprep_mod.count_tokens(text or "")),
+                             "X-Tokens-After": str(llmprep_mod.count_tokens(out))})
+
+
+@app.post("/api/chunk")
+async def chunk_endpoint(request: Request, text: str = Form(...),
+                         size: Optional[str] = Form(default=None)):
+    """Parte el Markdown en chunks por presupuesto de tokens. Devuelve JSONL
+    (una línea por chunk) listo para embeddings / vector DB."""
+    _require(request)
+    try:
+        n = max(128, min(8192, int(size))) if size else 1024
+    except ValueError:
+        n = 1024
+    chunks = await asyncio.to_thread(llmprep_mod.chunk, text or "", n)
+    import json as _json
+    lines = []
+    for i, c in enumerate(chunks):
+        lines.append(_json.dumps(
+            {"id": i, "tokens": llmprep_mod.count_tokens(c), "text": c}, ensure_ascii=False))
+    body = "\n".join(lines) + ("\n" if lines else "")
+    return Response(body, media_type="application/x-ndjson; charset=utf-8",
+                    headers={"X-Chunk-Count": str(len(chunks))})
 
 
 def _write_temp(data: bytes, suffix: str) -> str:

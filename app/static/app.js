@@ -84,6 +84,7 @@ function onAuthed(caps) {
   if (customOpt) customOpt.hidden = !caps.llmCustomBase;
   $("baseUrlField").classList.add("hidden");
   $("ocrField").classList.toggle("hidden", !caps.ocr);
+  $("advField").classList.toggle("hidden", !caps.advancedExtract);
   $("anonField").classList.toggle("hidden", !caps.anonimal);   // anonimización si el server la habilita
   if (caps.anonimal && caps.detectors) renderDetectors(caps.detectors);
   $("stats").classList.toggle("hidden", caps.stats === "none");
@@ -95,6 +96,7 @@ function onAuthed(caps) {
   restoreApiKey();
   applyLimits();
   loadFormats();
+  loadModelPrices();
   startStats();
 }
 function applyLimits() {
@@ -344,7 +346,9 @@ function wireResult(root, it) {
       <button class="btn ghost sm" data-act="zoom">${t("res.zoom")}</button>
       <button class="btn ghost sm" data-act="copy">${t("res.copy")}</button>
       <button class="btn ghost sm" data-act="dl">${t("res.dl")}</button>
+      ${(CAPS.export && CAPS.export.length) ? `<select class="export-sel" title="${t("exp.title")}"><option value="">${t("exp.label")}</option>${CAPS.export.map(f => `<option value="${f.id}">${escapeHtml(f.label)}</option>`).join("")}</select>` : ""}
     </div>
+    ${it.result.llm ? '<div class="llm-panel-wrap"></div>' : ""}
     <div class="view"><div class="preview"></div><pre class="raw hidden"></pre></div>`;
   const view = body.querySelector(".view"), prev = body.querySelector(".preview"), raw = body.querySelector(".raw");
   prev.innerHTML = renderMd(it.result.markdown);
@@ -365,19 +369,189 @@ function wireResult(root, it) {
   body.querySelector('[data-act="zoom"]').addEventListener("click", () => openResultModal(it));
   const rb = body.querySelector('[data-act="redact"]');
   if (rb) rb.addEventListener("click", () => redactItem(it, rb));
+  const pw = body.querySelector(".llm-panel-wrap");
+  if (pw) mountPanel(pw, it);
+  const es = body.querySelector(".export-sel");
+  if (es) es.addEventListener("change", () => exportItem(it, es));
+}
+
+// Exportar el Markdown a otro formato (Pandoc) y descargar.
+async function exportItem(it, sel) {
+  const fmt = sel.value; if (!fmt) return;
+  sel.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append("text", it.result.markdown || "");
+    fd.append("fmt", fmt);
+    const res = await fetch("/api/export", { method: "POST", body: fd });
+    if (!res.ok) { let m = "Error " + res.status; try { m = (await res.json()).detail || m; } catch {} throw new Error(m); }
+    const ext = res.headers.get("X-Export-Ext") || fmt;
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = baseName(it.name) + "." + ext;
+    a.click(); URL.revokeObjectURL(a.href);
+  } catch (e) { toast(e.message, "err"); }
+  finally { sel.disabled = false; sel.value = ""; }
+}
+
+// ---------- Panel LLM: catálogo de modelos EN VIVO (OpenRouter) ----------
+let MODELS = [], MODELS_BY_ID = {}, MODELS_DEFAULTS = [];
+const PANEL_STORE = "mid_panel_models";
+async function loadModelPrices() {
+  try {
+    const d = await (await fetch("/api/model_prices")).json();
+    MODELS = d.models || [];
+    MODELS_BY_ID = Object.fromEntries(MODELS.map(m => [m.id, m]));
+    MODELS_DEFAULTS = (d.defaults || []).filter(id => MODELS_BY_ID[id]);
+    if (!MODELS_DEFAULTS.length) MODELS_DEFAULTS = MODELS.slice(0, 3).map(m => m.id);
+  } catch {}
+}
+function panelModels() {
+  try { const v = JSON.parse(localStorage.getItem(PANEL_STORE)); if (Array.isArray(v)) return v.filter(id => MODELS_BY_ID[id]); } catch {}
+  return MODELS_DEFAULTS.slice();
+}
+function setPanelModels(ids) { try { localStorage.setItem(PANEL_STORE, JSON.stringify(ids)); } catch {} }
+const ctxLabel = (n) => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M" : n >= 1000 ? Math.round(n / 1000) + "K" : "" + n;
+const usd = (v) => v <= 0 ? "gratis" : v < 0.01 ? "$" + v.toFixed(4) : v < 1 ? "$" + v.toFixed(3) : "$" + v.toFixed(2);
+
+// ---------- Panel LLM: render + interacción ----------
+function mountPanel(wrap, it) {
+  const d = it.result.llm; if (!d) return;
+  const nf = (n) => (n || 0).toLocaleString();
+  const sel = panelModels();
+  const rows = sel.map(id => {
+    const m = MODELS_BY_ID[id]; if (!m) return "";
+    const cost = d.tokens / 1e6 * m.in, ok = d.tokens <= m.ctx;
+    return `<tr>
+      <td class="lm-name" title="${escapeHtml(m.id)}">${escapeHtml(m.name)}</td>
+      <td class="lm-cost">~${usd(cost)}</td>
+      <td><span class="llm-fit ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${ctxLabel(m.ctx)}</span></td>
+      <td><button class="lm-rm" data-id="${escapeHtml(id)}" title="${t("llm.remove")}">✕</button></td>
+    </tr>`;
+  }).join("");
+  // desplegable para agregar (agrupado por proveedor), sin los ya elegidos
+  const groups = {};
+  MODELS.filter(m => !sel.includes(m.id)).forEach(m => { const g = m.id.split("/")[0]; (groups[g] ||= []).push(m); });
+  const opts = Object.keys(groups).sort().map(g =>
+    `<optgroup label="${escapeHtml(g)}">${groups[g].map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)} · ${usd(m.in)}/M · ${ctxLabel(m.ctx)}</option>`).join("")}</optgroup>`
+  ).join("");
+  const saved = d.saved > 0
+    ? `<button class="llm-link" data-llm="compact">${t("llm.saved")} −${d.saved_pct}% · ${t("llm.compactDl")}</button>` : "";
+  const inj = (d.injection && d.injection.length)
+    ? `<div class="llm-warn">⚠️ <b>${t("llm.injection")}</b> ${d.injection.map(x => escapeHtml(x.why)).join(" · ")}</div>` : "";
+  wrap.innerHTML = `<div class="llm-panel">
+    <div class="llm-head">
+      <div class="llm-tok"><b>${nf(d.tokens)}</b> tokens</div>
+      ${saved}
+      <span class="llm-meta">🛡️ ${nf(d.pii_count)} ${t("llm.pii")} · 📦 ${nf(d.chunks)} ${t("llm.chunks")} <button class="llm-link" data-llm="chunks">${t("llm.chunksDl")}</button></span>
+    </div>
+    <table class="llm-tbl"><thead><tr><th>${t("llm.model")}</th><th>${t("llm.cost")}</th><th>${t("llm.context")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <select class="llm-add"><option value="">+ ${t("llm.addModel")}</option>${opts}</select>
+    ${inj}
+  </div>`;
+  // interacción
+  wrap.querySelector(".llm-add").addEventListener("change", (e) => {
+    if (!e.target.value) return;
+    setPanelModels([...sel, e.target.value]); mountPanel(wrap, it);
+  });
+  wrap.querySelectorAll(".lm-rm").forEach(b => b.addEventListener("click", () => {
+    setPanelModels(sel.filter(x => x !== b.dataset.id)); mountPanel(wrap, it);
+  }));
+  const cb = wrap.querySelector('[data-llm="compact"]');
+  if (cb) cb.addEventListener("click", () => downloadProcessed("/api/compact", it, cb, baseName(it.name) + "-compacto.md"));
+  const kb = wrap.querySelector('[data-llm="chunks"]');
+  if (kb) kb.addEventListener("click", () => downloadProcessed("/api/chunk", it, kb, baseName(it.name) + "-chunks.jsonl"));
+}
+
+// Re-envía el Markdown del resultado a un endpoint de proceso y baja el archivo.
+async function downloadProcessed(url, it, btn, filename, mime) {
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = "…";
+  try {
+    const fd = new FormData();
+    fd.append("text", it.result.markdown || "");
+    const res = await fetch(url, { method: "POST", body: fd });
+    if (!res.ok) throw new Error("Error " + res.status);
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+  } catch (e) { toast(e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = orig; }
 }
 
 // Censura visual: re-envía el archivo original y baja el PDF tachado.
+function redactFormData(it, preview) {
+  const fd = new FormData();
+  fd.append("file", it.file);
+  const lang = $("lang")?.value; if (lang) fd.append("lang", lang);
+  fd.append("anon_strict", $("anonStrict")?.value || "balanceado");
+  fd.append("anon_detectors", getEnabledDetectors().join(","));
+  const rules = getAnonRules(); if (rules) fd.append("anon_rules", rules);
+  if (preview) fd.append("preview", "1");
+  return fd;
+}
+
+// Paso 1: vista previa — muestra QUÉ se va a tachar y con qué config, antes de generar.
 async function redactItem(it, btn) {
   const orig = btn.textContent;
-  btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> ${t("redact.working")}`;
+  btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> ${t("redact.scanning")}`;
   try {
-    const fd = new FormData();
-    fd.append("file", it.file);
-    const lang = $("lang")?.value; if (lang) fd.append("lang", lang);
-    fd.append("anon_strict", $("anonStrict")?.value || "balanceado");
-    fd.append("anon_detectors", getEnabledDetectors().join(","));
-    const rules = getAnonRules(); if (rules) fd.append("anon_rules", rules);
+    const res = await fetch("/api/redact", { method: "POST", body: redactFormData(it, true) });
+    if (!res.ok) {
+      let msg = "Error " + res.status;
+      try { msg = (await res.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
+    openRedactPreview(it, await res.json());
+  } catch (e) { toast(e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+
+const REDACT_TYPES = { PERSONA: "Nombre", DOMICILIO: "Domicilio", EMAIL: "Email", TEL: "Teléfono", ID: "ID/CUIT/DNI", FECHA: "Fecha", URL: "URL", SECRETO: "Secreto", DATO: "Dato" };
+function openRedactPreview(it, d) {
+  const ents = d.entities || [];
+  $("rpStrict").textContent = d.strict ? t("anon.strict") : t("anon.balanced");
+  $("rpDet").textContent = d.detectors == null ? t("rp.default") : d.detectors;
+  $("rpCount").textContent = d.unique || 0;
+  const body = $("rpList");
+  $("rpAllWrap").style.display = ents.length ? "flex" : "none";
+  if (!ents.length) {
+    body.innerHTML = `<div class="rp-empty">${t("rp.empty")}</div>`;
+  } else {
+    body.innerHTML = ents.map(e =>
+      `<label class="rp-row"><input type="checkbox" class="rp-chk" data-text="${escapeHtml(e.text)}" checked style="width:auto" />` +
+      `<span class="rp-type">${escapeHtml(REDACT_TYPES[e.type] || e.type)}</span>` +
+      `<span class="rp-text">${escapeHtml(e.text)}</span>` +
+      `${e.count > 1 ? `<span class="rp-cnt">×${e.count}</span>` : ""}</label>`).join("");
+  }
+  const go = $("rpConfirm");
+  const chks = () => Array.from(body.querySelectorAll(".rp-chk"));
+  const refresh = () => {
+    const sel = chks().filter(c => c.checked);
+    $("rpSel").textContent = sel.length;
+    go.disabled = !sel.length;
+    $("rpAll").checked = sel.length === chks().length;
+  };
+  body.querySelectorAll(".rp-chk").forEach(c => c.addEventListener("change", refresh));
+  $("rpAll").onchange = () => { chks().forEach(c => c.checked = $("rpAll").checked); refresh(); };
+  refresh();
+  go.onclick = () => {
+    const only = chks().filter(c => c.checked).map(c => c.dataset.text);
+    closeModal("redactPreviewModal");
+    confirmRedact(it, only);
+  };
+  $("rpAdjust").onclick = () => { closeModal("redactPreviewModal"); openSettings("anon"); };
+  openModal("redactPreviewModal");
+}
+
+// Paso 2: confirmado — genera y descarga el PDF censurado de verdad (solo lo tildado).
+async function confirmRedact(it, only) {
+  toast(t("redact.working"), "");
+  try {
+    const fd = redactFormData(it, false);
+    if (only && only.length) fd.append("only", JSON.stringify(only));
     const res = await fetch("/api/redact", { method: "POST", body: fd });
     if (!res.ok) {
       let msg = "Error " + res.status;
@@ -392,12 +566,12 @@ async function redactItem(it, btn) {
     a.click(); URL.revokeObjectURL(a.href);
     toast(t("redact.done", { n }), "ok");
   } catch (e) { toast(e.message, "err"); }
-  finally { btn.disabled = false; btn.textContent = orig; }
 }
 
 // ---------- Modales ----------
 const APP_VERSION = "1.3.4";
 function openModal(id) { $(id).classList.remove("hidden"); }
+function closeModal(id) { $(id).classList.add("hidden"); }
 function openResultModal(it) {
   $("rmTitle").textContent = (it.name || "Resultado").split(/[\\/]/).pop();
   $("rmBody").innerHTML = renderMd(it.result.markdown);
@@ -426,6 +600,7 @@ function convertOne(it) {
     if (it.isUrl) fd.append("url", it.url); else fd.append("file", it.file);
     const langVal = $("lang").value; if (langVal && langVal !== "auto") fd.append("lang", langVal);
     if (CAPS.ocr && $("ocrChk").checked) fd.append("ocr", "true");
+    if (CAPS.advancedExtract && $("advChk").checked) fd.append("advanced", "true");
     // Anonimización de PII (si está habilitada y el usuario eligió un modo).
     if (CAPS.anonimal) {
       const am = $("anonMode")?.value;

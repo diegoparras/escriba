@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-ita \
     redis-server \
     libgomp1 \
+    pandoc \
+    default-jre-headless \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -47,12 +49,18 @@ RUN mkdir -p /opt/models && \
       echo "Reintento $n de descarga del modelo..."; sleep 15; \
     done
 
+# Horneamos el vocabulario BPE de tiktoken (Panel LLM) para que el conteo de
+# tokens funcione OFFLINE, sin descargar nada en runtime.
+ENV TIKTOKEN_CACHE_DIR=/opt/tiktoken
+RUN mkdir -p /opt/tiktoken && \
+    python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
+
 COPY app ./app
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
 # --- Usuario NO-root (mitiga explotación de parsers — M3/M4) ---
-RUN useradd -m -u 10001 appuser && chown -R appuser:appuser /app /opt/models
+RUN useradd -m -u 10001 appuser && chown -R appuser:appuser /app /opt/models /opt/tiktoken
 
 # --- Configuración (todo overridable por variables de entorno) ---
 ENV MAX_UPLOAD_MB=100 \

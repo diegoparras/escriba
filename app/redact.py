@@ -45,39 +45,75 @@ def has_text(path: str) -> bool:
         return False
 
 
-def redact_pdf(path: str, strict: bool = False, rules=None, detector_ids=None):
+def _extract(path):
+    """(doc, pages, full): abre el PDF y arma, por página, las palabras con su
+    bounding box + el texto unido con su mapeo offset→caja. Cierra el llamador."""
+    doc = fitz.open(path)
+    pages = []   # (words, page_text, offsets[(start,end)])
+    for page in doc:
+        words = page.get_text("words")   # [x0,y0,x1,y1, palabra, ...]
+        offs, parts, pos = [], [], 0
+        for w in words:
+            parts.append(w[4])
+            offs.append((pos, pos + len(w[4])))
+            pos += len(w[4]) + 1   # +1 por el espacio separador
+        pages.append((words, " ".join(parts), offs))
+    full = _PAGE_SEP.join(p[1] for p in pages)
+    return doc, pages, full
+
+
+def _detect(path, full, strict, rules, detector_ids):
+    """Detección unificada (OPF + detectores + layout de comprobante + reglas)."""
+    known = []
+    if pdf_extract.is_invoice(full):
+        known = pdf_extract.invoice_field_values(path)
+    return anonimal.detect_spans(full, strict=strict, known_pii=known,
+                                 rules=rules, detector_ids=detector_ids)
+
+
+def entities_pdf(path: str, strict: bool = False, rules=None, detector_ids=None):
+    """VISTA PREVIA: lista (deduplicada) de lo que se TACHARÍA, sin generar el
+    PDF. Devuelve [{text, type, count}] ordenado por frecuencia. Falla segura."""
+    doc, _pages, full = _extract(path)
+    try:
+        if not full.strip():
+            raise RedactError("El documento no tiene texto detectable (¿escaneado sin OCR?).")
+        spans = _detect(path, full, strict, rules, detector_ids)
+        agg = {}
+        for s in spans:
+            txt = full[s["start"]:s["end"]].strip()
+            if not txt:
+                continue
+            typ = anonimal._TYPE_NAME.get(s["placeholder"], "DATO")
+            key = (txt.lower(), typ)
+            if key in agg:
+                agg[key]["count"] += 1
+            else:
+                agg[key] = {"text": txt, "type": typ, "count": 1}
+        return sorted(agg.values(), key=lambda x: (-x["count"], x["text"].lower()))[:300]
+    finally:
+        doc.close()
+
+
+def redact_pdf(path: str, strict: bool = False, rules=None, detector_ids=None, only=None):
     """
     Censura visualmente el PDF en `path`. Devuelve (pdf_bytes, entidades).
     El PDF debe tener capa de texto (electrónico u OCR aplicado antes).
+    - only: si es una lista de textos, SOLO se tachan esos (los que el usuario
+      dejó tildados en el modal de selección). None = tachar todo lo detectado.
     Falla SEGURA: ante cualquier error lanza RedactError; jamás devuelve el
     documento original como si estuviera censurado.
     """
-    doc = fitz.open(path)
+    doc, pages, full = _extract(path)
     try:
-        # 1) Palabras con bounding box, página por página, y texto unido
-        #    manteniendo el mapeo offset-de-carácter → caja.
-        pages = []   # (words, page_text, offsets[(start,end)])
-        for page in doc:
-            words = page.get_text("words")   # [x0,y0,x1,y1, palabra, ...]
-            offs, parts, pos = [], [], 0
-            for w in words:
-                parts.append(w[4])
-                offs.append((pos, pos + len(w[4])))
-                pos += len(w[4]) + 1   # +1 por el espacio separador
-            pages.append((words, " ".join(parts), offs))
-
-        full = _PAGE_SEP.join(p[1] for p in pages)
         if not full.strip():
             raise RedactError("El documento no tiene texto detectable (¿escaneado sin OCR?).")
+        spans = _detect(path, full, strict, rules, detector_ids)
+        if only is not None:
+            keep = {str(x).strip().lower() for x in only}
+            spans = [s for s in spans if full[s["start"]:s["end"]].strip().lower() in keep]
 
-        # 2) Detección unificada (OPF + detectores + layout de comprobante + reglas).
-        known = []
-        if pdf_extract.is_invoice(full):
-            known = pdf_extract.invoice_field_values(path)
-        spans = anonimal.detect_spans(full, strict=strict, known_pii=known,
-                                      rules=rules, detector_ids=detector_ids)
-
-        # 3) Repartir spans por página y tachar las palabras que tocan.
+        # Repartir spans por página y tachar las palabras que tocan.
         entities = 0
         base = 0
         for pi, (words, ptext, offs) in enumerate(pages):

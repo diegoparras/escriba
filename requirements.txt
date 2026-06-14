@@ -37,3 +37,12 @@ pymupdf>=1.24,<2.0
 # Motor de regex RE2 (tiempo lineal) para las reglas de anonimización que sube
 # el usuario: el ReDoS es imposible por diseño. NUNCA usar `re` con esos patrones.
 google-re2>=1.1
+
+# Panel LLM: conteo de tokens (tiktoken) y chunking para RAG (semchunk).
+# Sin modelos de lenguaje: solo un tokenizer BPE + utilidades de texto.
+tiktoken>=0.7,<1.0
+semchunk>=2.2,<4.0
+
+# Extracción avanzada de PDF (estructura/layout/orden de lectura). Determinístico,
+# sin GPU; corre sobre la JVM (se instala default-jre-headless en el Dockerfile).
+opendataloader-pdf>=0.4

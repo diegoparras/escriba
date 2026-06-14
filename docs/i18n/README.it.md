@@ -2,9 +2,9 @@
 
 # ✍️ Escriba
 
-**Qualsiasi documento in Markdown pulito e anonimo — pronto per gli LLM.**
+**Il traduttore universale verso il linguaggio dell’IA.**
 
-Un’applicazione web auto‑ospitabile basata su [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
+Trasforma qualsiasi documento in Markdown pulito e anonimo — pronto per qualunque LLM ed esportabile in Word, XML e altro. Uno strumento auto‑ospitabile che risolve i grattacapi di dare in pasto documenti a un LLM: input rumoroso e avido di token → Markdown pulito, fuga di dati sensibili → anonimizzazione PII integrata con pseudonimizzazione reversibile, e un pannello di preparazione per LLM integrato che conta i token, stima il costo con prezzi in tempo reale, verifica l’adattamento alla finestra di contesto e suddivide in chunk per il RAG. In locale, in 7 lingue, basato su [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-e07f5c.svg)](../../LICENSE)
 [![Immagine Docker](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Fescriba-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/escriba/pkgs/container/escriba)
@@ -31,6 +31,9 @@ Un’applicazione web auto‑ospitabile basata su [Microsoft MarkItDown](https:/
 - 🤖 **IA opzionale** — OpenAI, Google Gemini (AI Studio) o OpenRouter, con valore predefinito **«Senza IA»**. I modelli vengono elencati automaticamente.
 - 🛡️ **Anonimizzazione PII per LLM** — motore di privacy locale completo: modello NER ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + campi delle fatture per layout + rilevatori validati (carta **Luhn**, **IBAN**) + le tue regole **RE2**. Cinque modalità di output: *tipizzata*, *anonima*, **pseudonimizzazione reversibile** («PERSONA_1» → invia all’LLM → re-idrata in locale), **mascheramento parziale** (••••-3456) e **hash stabile** (stesso dato → stesso pseudonimo tra documenti).
 - ⬛ **Censura visiva** — scarica il PDF o l’immagine scansionata con i dati **oscurati sulla pagina**. Redazione reale: il testo e i pixel sottostanti vengono rimossi dal file, non coperti.
+- 📤 **Esportazione in 10 formati** — oltre al Markdown, un unico menu di download unificato esporta il risultato in **Word (.docx)**, ODT, EPUB, HTML, LaTeX, reStructuredText e **XML** strutturato (DocBook, JATS, TEI, OPML) — grazie a [Pandoc](https://pandoc.org/). Nessun LLM coinvolto.
+- 🧠 **Pannello di preparazione per LLM** — ogni conversione mostra un **conteggio dei token** (tiktoken), i **token e il costo risparmiati** dall’anonimizzazione, una **stima del costo per modello in tempo reale** (prezzi recuperati da [OpenRouter](https://openrouter.ai/)), l’**adattamento alla finestra di contesto** su centinaia di modelli, lo **chunking per RAG** con un clic e un **rilevatore di prompt injection**. Tutto in locale, senza chiamate all’IA.
+- 🔬 **Estrazione PDF avanzata** — motore [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) attivabile per layout complessi: migliore ordine di lettura (XY-Cut++) e gerarchia dei titoli, con fallback automatico all’estrattore predefinito.
 - 🌍 **7 lingue dell’interfaccia** — English, Español, Français, Português, Italiano, 中文, 日本語 (rilevate automaticamente, modificabili).
 - 👑😇👤 **Tre livelli di accesso** — DIOS / ANGEL / HUMANO, ognuno con la propria password e i propri limiti.
 - 🔒 **Privato per progettazione** — i file caricati vengono eliminati subito dopo la conversione; nulla viene memorizzato.
@@ -188,6 +191,31 @@ condiviso tra i worker tramite il Redis integrato.
 
 ---
 
+## 📤 Esportazione oltre il Markdown
+
+Il Markdown pulito è il cuore del progetto, ma l’unico **menu «Formato…»** della scheda dei risultati lo trasforma in qualunque cosa serva al tuo flusso di lavoro — scegli un formato, poi premi **Scarica** (non si attiva mai da solo). Grazie a [Pandoc](https://pandoc.org/), senza alcun LLM coinvolto:
+
+| Famiglia | Formati |
+|---|---|
+| Markdown | `.md`, compatto (spazi rimossi), chunk per RAG (`.jsonl`) |
+| Office ed ebook | **Word `.docx`**, ODT, EPUB |
+| Web e impaginazione | HTML, LaTeX, reStructuredText |
+| XML strutturato | **DocBook**, **JATS**, **TEI**, **OPML** |
+| Privacy | PDF censurato (PII oscurata — vedi sopra) |
+
+## 🧠 Pannello di preparazione per LLM
+
+Ogni conversione è accompagnata da un pannello compatto che prepara il testo per un modello — interamente in locale, con zero chiamate all’IA:
+
+- **Conteggio dei token** con `tiktoken` (`o200k_base`, incluso nell’immagine — funziona offline).
+- **Token e costo risparmiati** dall’anonimizzazione, così puoi vedere cosa ti fa guadagnare rimuovere le PII.
+- **Stima del costo per modello in tempo reale** — prezzi e finestre di contesto recuperati da [OpenRouter](https://openrouter.ai/) (centinaia di modelli, in cache) così i numeri non sono mai obsoleti.
+- **Adattamento alla finestra di contesto** — a colpo d’occhio, in quali modelli rientra il documento.
+- **Chunking per RAG con un clic** — suddivide in chunk sovrapposti e limitati per token (`semchunk`), scaricabili come `.jsonl`.
+- **Rilevatore di prompt injection** — segnala il testo che tenta di dirottare un LLM a valle.
+
+---
+
 ## 🔌 API
 
 Utile per l’automazione (n8n, script). Richiede autenticazione.
@@ -218,6 +246,15 @@ curl -b cookies.txt -F "file=@documento.pdf"    https://il-tuo-dominio/api/conve
 ```
 
 `POST /api/redact` (multipart/form-data): `file` (PDF o immagine), opzionali `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Restituisce il **PDF censurato** (binario) con l’header `X-Redacted-Entities`.
+
+Post‑elaborazione del Markdown (JSON in ingresso, JSON o file in uscita):
+
+| Endpoint | Metodo | Descrizione |
+|---|---|---|
+| `/api/export` | POST | Converte il Markdown in un formato di destinazione (`docx`, `odt`, `epub`, `html`, `latex`, `rst`, `docbook`, `jats`, `tei`, `opml`). |
+| `/api/compact` | POST | Markdown con spazi rimossi per risparmiare token. |
+| `/api/chunk` | POST | Chunk per RAG limitati per token (restituisce `.jsonl`). |
+| `/api/model_prices` | GET | Prezzi dei modelli e finestre di contesto in tempo reale (OpenRouter, in cache). |
 
 ---
 

@@ -2,9 +2,9 @@
 
 # ✍️ Escriba
 
-**あらゆる文書を、きれいで匿名化された Markdown に —— LLM 対応。**
+**AI の言語への、ユニバーサル翻訳機。**
 
-[Microsoft MarkItDown](https://github.com/microsoft/markitdown) をベースにした、セルフホスト可能な Web アプリです。
+あらゆる文書を、きれいで匿名化された Markdown に —— あらゆる LLM 対応、さらに Word、XML などへエクスポート可能。LLM に文書を読み込ませる際の頭痛を解決する、セルフホスト可能なツールです：ノイズが多くトークンを浪費する入力 → きれいな Markdown、機微データの漏えい → 可逆仮名化による組み込み PII 匿名化、そしてトークン数を数え、ライブ価格でコストを見積もり、コンテキストウィンドウへの収まりを確認し、RAG 向けにチャンク分割する組み込みの LLM 準備パネル。ローカルで動作、7 言語対応、[Microsoft MarkItDown](https://github.com/microsoft/markitdown) をベースに構築。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-e07f5c.svg)](../../LICENSE)
 [![Docker イメージ](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Fescriba-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/escriba/pkgs/container/escriba)
@@ -31,6 +31,9 @@
 - 🤖 **任意の AI** —— OpenAI、Google Gemini（AI Studio）、OpenRouter。既定は **「AI を使わない」**。モデルは自動で一覧表示。
 - 🛡️ **LLM 向け PII 匿名化** — 完全ローカルのプライバシーエンジン：NER モデル（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）+ レイアウト解析による請求書フィールド + 検証付き検出器（クレジットカード **Luhn**、**IBAN**）+ 独自の **RE2** ルール。出力は 5 モード：*型付き*、*匿名*、**可逆仮名化**（«PERSONA_1» → LLM に送信 → ローカルで復元）、**部分マスク**（••••-3456）、**安定ハッシュ**（同じデータ → 文書をまたいで同じ仮名）。
 - ⬛ **ビジュアル墨消し** — PII を**ページ上で黒塗り**した PDF・スキャン画像をダウンロード。本物の墨消し：テキストと下のピクセルはファイルから削除されます（上に被せるだけではありません）。
+- 📤 **10 形式へエクスポート** — Markdown だけでなく、統一されたダウンロードメニュー 1 つで結果を **Word（.docx）**、ODT、EPUB、HTML、LaTeX、reStructuredText、構造化 **XML**（DocBook、JATS、TEI、OPML）へエクスポート —— [Pandoc](https://pandoc.org/) を使用。LLM は一切関与しません。
+- 🧠 **LLM 準備パネル** — 変換ごとに **トークン数**（tiktoken）、匿名化による **節約トークン数とコスト**、**モデル別のライブコスト見積もり**（価格は [OpenRouter](https://openrouter.ai/) から取得）、数百モデルにわたる **コンテキストウィンドウへの収まり**、ワンクリックの **RAG チャンク分割**、そして **プロンプトインジェクション検出器** を表示。すべてローカルで、AI 呼び出しはありません。
+- 🔬 **高度な PDF 抽出** — 複雑なレイアウト向けにオプトインの [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) エンジン：より優れた読み順（XY-Cut++）と見出し階層を実現し、既定の抽出器へ自動フォールバックします。
 - 🌍 **7 言語の UI** —— English、Español、Français、Português、Italiano、中文、日本語（自動検出、切替可能）。
 - 👑😇👤 **3 つのアクセスレベル** —— DIOS / ANGEL / HUMANO。それぞれ独自のパスワードと制限。
 - 🔒 **設計からプライベート** —— アップロードしたファイルは変換後すぐに削除。何も保存しません。
@@ -186,6 +189,31 @@ HUMAN_PASSWORD=<任意>
 
 ---
 
+## 📤 Markdown を超えるエクスポート
+
+きれいな Markdown が中核ですが、結果カードの **単一の「形式…」メニュー** が、それをワークフローに必要なものへ変えます —— 形式を選んで **ダウンロード** を押すだけ（勝手に実行されることはありません）。[Pandoc](https://pandoc.org/) を使用し、LLM は一切関与しません：
+
+| ファミリー | 形式 |
+|---|---|
+| Markdown | `.md`、コンパクト（空白除去）、RAG チャンク（`.jsonl`） |
+| Office・電子書籍 | **Word `.docx`**、ODT、EPUB |
+| Web・組版 | HTML、LaTeX、reStructuredText |
+| 構造化 XML | **DocBook**、**JATS**、**TEI**、**OPML** |
+| プライバシー | 墨消し済み PDF（PII を黒塗り —— 上記参照） |
+
+## 🧠 LLM 準備パネル
+
+変換ごとに、テキストをモデル向けに整えるコンパクトなパネルが付きます —— すべて完全にローカルで、AI 呼び出しはゼロ：
+
+- `tiktoken` による **トークン数**（`o200k_base`、イメージに同梱 —— オフラインで動作）。
+- 匿名化による **節約トークン数とコスト**。PII を取り除くことで何が得られるかが分かります。
+- **モデル別のライブコスト見積もり** —— 価格とコンテキストウィンドウは [OpenRouter](https://openrouter.ai/) から取得（数百モデル、キャッシュ済み）なので、数値が古くなりません。
+- **コンテキストウィンドウへの収まり** —— どのモデルに文書が収まるか一目で分かります。
+- **ワンクリックの RAG チャンク分割** —— 重複ありでトークン上限付きのチャンク（`semchunk`）に分割し、`.jsonl` としてダウンロード可能。
+- **プロンプトインジェクション検出器** —— 下流の LLM を乗っ取ろうとするテキストを検出します。
+
+---
+
 ## 🔌 API
 
 自動化（n8n、スクリプト）に便利。認証が必要です。
@@ -216,6 +244,15 @@ curl -b cookies.txt -F "file=@document.pdf"     https://あなたのドメイン
 ```
 
 `POST /api/redact`（multipart/form-data）：`file`（PDF または画像）、任意で `lang`、`anon_strict`、`anon_detectors`、`anon_rules`。**墨消し済み PDF**（バイナリ）を返し、ヘッダー `X-Redacted-Entities` に黒塗り件数が入ります。
+
+Markdown の後処理（JSON 入力、JSON またはファイル出力）：
+
+| エンドポイント | メソッド | 説明 |
+|---|---|---|
+| `/api/export` | POST | Markdown を対象形式へ変換（`docx`、`odt`、`epub`、`html`、`latex`、`rst`、`docbook`、`jats`、`tei`、`opml`）。 |
+| `/api/compact` | POST | トークンを節約するため空白を除去した Markdown。 |
+| `/api/chunk` | POST | トークン上限付きの RAG チャンク（`.jsonl` を返す）。 |
+| `/api/model_prices` | GET | モデルのライブ価格とコンテキストウィンドウ（OpenRouter、キャッシュ済み）。 |
 
 ---
 

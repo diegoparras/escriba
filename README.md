@@ -2,12 +2,15 @@
 
 # ✍️ Escriba
 
-**Turn any document into clean, anonymized Markdown — ready for any LLM.**
+**The universal translator into the language of AI.**
 
-The two headaches of feeding documents to an LLM, solved in one self‑hostable tool:
-**noisy, token‑hungry input** → clean Markdown, and **sensitive‑data leakage** →
-built‑in PII anonymization with reversible pseudonymization. Local, in 7 languages,
-built on [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
+Turn any document into clean, anonymized Markdown — ready for any LLM, and exportable
+to Word, XML and more. The headaches of feeding documents to an LLM, solved in one
+self‑hostable tool: **noisy, token‑hungry input** → clean Markdown, **sensitive‑data
+leakage** → built‑in PII anonymization with reversible pseudonymization, and a built‑in
+**LLM prep panel** that counts tokens, estimates cost with live pricing, checks
+context‑window fit and chunks for RAG. Local, in 7 languages, built on
+[Microsoft MarkItDown](https://github.com/microsoft/markitdown).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-e07f5c.svg)](LICENSE)
 [![Docker image](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Fescriba-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/escriba/pkgs/container/escriba)
@@ -34,6 +37,9 @@ built on [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
 - 🤖 **Optional AI** — OpenAI, Google Gemini (AI Studio) or OpenRouter, with a **“No AI”** default. Models are listed automatically.
 - 🛡️ **PII anonymization for LLMs** — a full local privacy engine ([see below](#-anonymization-for-llms)): NER model ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + layout‑aware invoice fields + validated detectors (credit‑card **Luhn**, **IBAN**) + your own **RE2** rules. Five output modes: *typed*, *anonymous*, **reversibly pseudonymized** (`«PERSONA_1»` → send to the LLM → re‑hydrate locally), **partial masking** (`••••‑3456`) and **stable hashing** (same data → same pseudonym across documents).
 - ⬛ **Visual redaction** — download your PDF or scanned image with the PII **blacked out on the page**. True redaction: the text and the pixels underneath are removed from the file, not covered.
+- 📤 **Export to 10 formats** — beyond Markdown, one unified download menu exports the result to **Word (.docx)**, ODT, EPUB, HTML, LaTeX, reStructuredText and structured **XML** (DocBook, JATS, TEI, OPML) — powered by [Pandoc](https://pandoc.org/). No LLM involved.
+- 🧠 **LLM prep panel** — every conversion shows a **token count** (tiktoken), the **tokens & cost saved** by anonymization, a **live per‑model cost estimate** (pricing pulled from [OpenRouter](https://openrouter.ai/)), **context‑window fit** across hundreds of models, one‑click **RAG chunking**, and a **prompt‑injection detector**. All local, no AI calls.
+- 🔬 **Advanced PDF extraction** — opt‑in [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) engine for complex layouts: better reading order (XY‑Cut++) and heading hierarchy, with automatic fallback to the default extractor.
 - 🌍 **7 UI languages** — English, Español, Français, Português, Italiano, 中文, 日本語 (auto‑detected, switchable).
 - 👑😇👤 **Three access levels** — DIOS / ANGEL / HUMANO, each with its own password and limits.
 - 🔒 **Private by design** — uploaded files are deleted right after conversion; nothing is stored.
@@ -229,6 +235,39 @@ Scanned documents are OCR’d automatically first. Same detection stack
 
 ---
 
+## 📤 Export beyond Markdown
+
+Clean Markdown is the core, but the result card’s **single “Format…” menu** turns it
+into whatever your workflow needs — pick a format, then hit **Download** (it never
+fires on its own). Powered by [Pandoc](https://pandoc.org/), with no LLM involved:
+
+| Family | Formats |
+|---|---|
+| Markdown | `.md`, compact (whitespace‑stripped), RAG chunks (`.jsonl`) |
+| Office & ebook | **Word `.docx`**, ODT, EPUB |
+| Web & typesetting | HTML, LaTeX, reStructuredText |
+| Structured XML | **DocBook**, **JATS**, **TEI**, **OPML** |
+| Privacy | redacted PDF (PII blacked out — see above) |
+
+---
+
+## 🧠 LLM prep panel
+
+Every conversion comes with a compact panel that gets the text ready for a model —
+**entirely locally, with zero AI calls:**
+
+- **Token count** with `tiktoken` (`o200k_base`, baked into the image — works offline).
+- **Tokens & cost saved** by anonymization, so you can see what stripping PII buys you.
+- **Live per‑model cost estimate** — pricing and context windows pulled from
+  [OpenRouter](https://openrouter.ai/) (hundreds of models, cached) so the numbers
+  are never stale.
+- **Context‑window fit** — at a glance, which models the document fits into.
+- **One‑click RAG chunking** — split into overlapping, token‑bounded chunks (`semchunk`),
+  downloadable as `.jsonl`.
+- **Prompt‑injection detector** — flags text that tries to hijack a downstream LLM.
+
+---
+
 ## 🔌 API
 
 Useful for automation (n8n, scripts). Authentication is required.
@@ -261,6 +300,15 @@ curl -b cookies.txt -F "file=@document.pdf"     https://your-domain/api/convert
 `POST /api/redact` (multipart/form-data): `file` (PDF or image), optional `lang`,
 `anon_strict`, `anon_detectors`, `anon_rules`. Returns the **redacted PDF**
 (binary) with the `X-Redacted-Entities` header counting what was blacked out.
+
+Markdown post‑processing (JSON in, JSON or file out):
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/export` | POST | Convert Markdown to a target format (`docx`, `odt`, `epub`, `html`, `latex`, `rst`, `docbook`, `jats`, `tei`, `opml`). |
+| `/api/compact` | POST | Whitespace‑stripped Markdown to save tokens. |
+| `/api/chunk` | POST | Token‑bounded RAG chunks (returns `.jsonl`). |
+| `/api/model_prices` | GET | Live model pricing & context windows (OpenRouter, cached). |
 
 ---
 

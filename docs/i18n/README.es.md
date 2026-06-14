@@ -2,9 +2,9 @@
 
 # ✍️ Escriba
 
-**Cualquier documento a Markdown limpio y anónimo — listo para LLMs.**
+**El traductor universal al idioma de la IA.**
 
-Una aplicación web auto‑alojable construida sobre [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
+Convierte cualquier documento en Markdown limpio y anónimo — listo para cualquier LLM, y exportable a Word, XML y más. Una herramienta auto‑alojable que resuelve los dolores de cabeza de darle documentos a un LLM: entrada ruidosa y devoradora de tokens → Markdown limpio, fuga de datos sensibles → anonimización de PII integrada con seudonimización reversible, y un panel de preparación para LLMs integrado que cuenta tokens, estima el costo con precios en vivo, comprueba si entra en la ventana de contexto y trocea para RAG. Local, en 7 idiomas, construido sobre [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-e07f5c.svg)](../../LICENSE)
 [![Docker image](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Fescriba-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/escriba/pkgs/container/escriba)
@@ -31,6 +31,9 @@ Una aplicación web auto‑alojable construida sobre [Microsoft MarkItDown](http
 - 🤖 **IA opcional** — OpenAI, Google Gemini (AI Studio) u OpenRouter, con un valor por defecto de **«Sin IA»**. Los modelos se listan automáticamente.
 - 🛡️ **Anonimización de PII para LLMs** — motor de privacidad local completo: modelo NER ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + campos de comprobantes por layout + detectores validados (tarjeta **Luhn**, **IBAN**) + tus propias reglas **RE2**. Cinco modos de salida: *tipado*, *anónimo*, **seudonimizado reversible** («PERSONA_1» → envíalo al LLM → re-hidrátalo localmente), **enmascarado parcial** (••••-3456) y **hash estable** (mismo dato → mismo seudónimo entre documentos).
 - ⬛ **Censura visual** — descarga tu PDF o imagen escaneada con el PII **tachado sobre la página**. Redacción real: el texto y los píxeles de abajo se eliminan del archivo, no se tapan.
+- 📤 **Exporta a 10 formatos** — más allá de Markdown, un único menú de descarga unificado exporta el resultado a **Word (.docx)**, ODT, EPUB, HTML, LaTeX, reStructuredText y **XML** estructurado (DocBook, JATS, TEI, OPML) — con [Pandoc](https://pandoc.org/). Sin IA de por medio.
+- 🧠 **Panel de preparación para LLMs** — cada conversión muestra un **conteo de tokens** (tiktoken), los **tokens y el costo ahorrados** por la anonimización, una **estimación de costo en vivo por modelo** (precios obtenidos de [OpenRouter](https://openrouter.ai/)), si **entra en la ventana de contexto** de cientos de modelos, **troceado para RAG** con un clic y un **detector de inyección de prompts**. Todo local, sin llamadas a IA.
+- 🔬 **Extracción avanzada de PDF** — motor opcional [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) para layouts complejos: mejor orden de lectura (XY‑Cut++) y jerarquía de títulos, con repliegue automático al extractor por defecto.
 - 🌍 **7 idiomas en la interfaz** — English, Español, Français, Português, Italiano, 中文, 日本語 (autodetectados y cambiables).
 - 👑😇👤 **Tres niveles de acceso** — DIOS / ANGEL / HUMANO, cada uno con su contraseña y límites.
 - 🔒 **Privado por diseño** — los archivos subidos se eliminan justo después de convertirse; no se almacena nada.
@@ -188,6 +191,31 @@ se comparte entre workers mediante el Redis embebido.
 
 ---
 
+## 📤 Exportar más allá de Markdown
+
+El Markdown limpio es el núcleo, pero el **menú único «Formato…»** de la tarjeta de resultado lo convierte en lo que tu flujo de trabajo necesite — elige un formato y luego pulsa **Descargar** (nunca se dispara solo). Con [Pandoc](https://pandoc.org/), sin IA de por medio:
+
+| Familia | Formatos |
+|---|---|
+| Markdown | `.md`, compacto (sin espacios sobrantes), trozos para RAG (`.jsonl`) |
+| Ofimática y ebook | **Word `.docx`**, ODT, EPUB |
+| Web y composición | HTML, LaTeX, reStructuredText |
+| XML estructurado | **DocBook**, **JATS**, **TEI**, **OPML** |
+| Privacidad | PDF censurado (PII tachado — ver arriba) |
+
+## 🧠 Panel de preparación para LLMs
+
+Cada conversión viene con un panel compacto que deja el texto listo para un modelo — íntegramente en local, con cero llamadas a IA:
+
+- **Conteo de tokens** con `tiktoken` (`o200k_base`, incluido en la imagen — funciona sin conexión).
+- **Tokens y costo ahorrados** por la anonimización, para que veas qué te aporta quitar el PII.
+- **Estimación de costo en vivo por modelo** — precios y ventanas de contexto obtenidos de [OpenRouter](https://openrouter.ai/) (cientos de modelos, en caché) para que los números nunca queden desactualizados.
+- **Ajuste a la ventana de contexto** — de un vistazo, en qué modelos entra el documento.
+- **Troceado para RAG con un clic** — divide en trozos solapados y acotados por tokens (`semchunk`), descargables como `.jsonl`.
+- **Detector de inyección de prompts** — marca el texto que intenta secuestrar a un LLM posterior.
+
+---
+
 ## 🔌 API
 
 Útil para automatización (n8n, scripts). Requiere autenticación.
@@ -218,6 +246,15 @@ curl -b cookies.txt -F "file=@documento.pdf"    https://tu-dominio/api/convert
 ```
 
 `POST /api/redact` (multipart/form-data): `file` (PDF o imagen), opcionales `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Devuelve el **PDF censurado** (binario) con la cabecera `X-Redacted-Entities` (cantidad de datos tachados).
+
+Posprocesamiento de Markdown (JSON de entrada, JSON o archivo de salida):
+
+| Endpoint | Método | Descripción |
+|---|---|---|
+| `/api/export` | POST | Convierte Markdown a un formato de destino (`docx`, `odt`, `epub`, `html`, `latex`, `rst`, `docbook`, `jats`, `tei`, `opml`). |
+| `/api/compact` | POST | Markdown sin espacios sobrantes para ahorrar tokens. |
+| `/api/chunk` | POST | Trozos para RAG acotados por tokens (devuelve `.jsonl`). |
+| `/api/model_prices` | GET | Precios y ventanas de contexto de modelos en vivo (OpenRouter, en caché). |
 
 ---
 

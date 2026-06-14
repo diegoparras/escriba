@@ -2,9 +2,9 @@
 
 # ✍️ Escriba
 
-**任何文档 → 干净、匿名的 Markdown —— 可直接喂给 LLM。**
+**通往 AI 语言的通用翻译器。**
 
-一个基于 [Microsoft MarkItDown](https://github.com/microsoft/markitdown) 的可自托管 Web 应用。
+将任何文档转换为干净、匿名的 Markdown —— 可直接喂给任意 LLM，还能导出为 Word、XML 等格式。一个可自托管的工具，解决向 LLM 喂文档时的种种烦恼：嘈杂、耗 token 的输入 → 干净的 Markdown，敏感数据泄露 → 内置带可还原假名化的 PII 匿名化，以及一个内置的 LLM 准备面板，可统计 token、用实时定价估算成本、检查是否适配上下文窗口并为 RAG 分块。本地运行，支持 7 种语言，基于 [Microsoft MarkItDown](https://github.com/microsoft/markitdown) 构建。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-e07f5c.svg)](../../LICENSE)
 [![Docker 镜像](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Fescriba-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/escriba/pkgs/container/escriba)
@@ -31,6 +31,9 @@
 - 🤖 **可选 AI** —— OpenAI、Google Gemini（AI Studio）或 OpenRouter，默认 **「不使用 AI」**。自动列出可用模型。
 - 🛡️ **面向 LLM 的 PII 匿名化** — 完整的本地隐私引擎：NER 模型（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）+ 基于版面的票据字段 + 校验型检测器（信用卡 **Luhn**、**IBAN**）+ 你自己的 **RE2** 规则。五种输出模式：*类型化*、*匿名*、**可还原假名化**（«PERSONA_1» → 发送给 LLM → 本地还原）、**部分掩码**（••••-3456）和**稳定哈希**（相同数据 → 跨文档相同假名）。
 - ⬛ **可视化遮蔽** — 下载 PII **在页面上被涂黑**的 PDF 或扫描图片。真正的涂黑：文字与底层像素都从文件中删除，而不是覆盖。
+- 📤 **导出为 10 种格式** — 除 Markdown 外，一个统一的下载菜单可将结果导出为 **Word（.docx）**、ODT、EPUB、HTML、LaTeX、reStructuredText 以及结构化 **XML**（DocBook、JATS、TEI、OPML）—— 由 [Pandoc](https://pandoc.org/) 提供支持。不涉及任何 LLM。
+- 🧠 **LLM 准备面板** — 每次转换都会显示 **token 数**（tiktoken）、匿名化所**节省的 token 与成本**、**按模型的实时成本估算**（定价取自 [OpenRouter](https://openrouter.ai/)）、跨数百个模型的**上下文窗口适配**情况、一键 **RAG 分块**以及一个**提示注入检测器**。全部本地运行，无任何 AI 调用。
+- 🔬 **高级 PDF 提取** — 可选启用 [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) 引擎，处理复杂版面：更优的阅读顺序（XY-Cut++）与标题层级，并在需要时自动回退到默认提取器。
 - 🌍 **7 种界面语言** —— English、Español、Français、Português、Italiano、中文、日本語（自动检测，可切换）。
 - 👑😇👤 **三种访问级别** —— DIOS / ANGEL / HUMANO，各有独立密码与限额。
 - 🔒 **隐私优先** —— 上传的文件在转换后立即删除；不会存储任何内容。
@@ -182,6 +185,31 @@ HUMAN_PASSWORD=<可选>
 
 ---
 
+## 📤 超越 Markdown 的导出
+
+干净的 Markdown 是核心，但结果卡片上的**单一「格式…」菜单**可将其转换为你的工作流所需的任意格式 —— 选择一种格式，然后点击 **下载**（它绝不会自动触发）。由 [Pandoc](https://pandoc.org/) 提供支持，不涉及任何 LLM：
+
+| 类别 | 格式 |
+|---|---|
+| Markdown | `.md`、紧凑版（去除空白）、RAG 分块（`.jsonl`） |
+| Office 与电子书 | **Word `.docx`**、ODT、EPUB |
+| Web 与排版 | HTML、LaTeX、reStructuredText |
+| 结构化 XML | **DocBook**、**JATS**、**TEI**、**OPML** |
+| 隐私 | 遮蔽版 PDF（PII 被涂黑 —— 见上文） |
+
+## 🧠 LLM 准备面板
+
+每次转换都附带一个紧凑面板，将文本准备好喂给模型 —— 全部本地完成，零 AI 调用：
+
+- 使用 `tiktoken` 的 **token 数**（`o200k_base`，已内置于镜像中 —— 可离线工作）。
+- 匿名化所**节省的 token 与成本**，让你看清剥离 PII 带来的收益。
+- **按模型的实时成本估算** —— 定价与上下文窗口取自 [OpenRouter](https://openrouter.ai/)（数百个模型，已缓存），因此数字永不过时。
+- **上下文窗口适配** —— 一眼看出文档能装进哪些模型。
+- **一键 RAG 分块** —— 切分为带重叠、有 token 上限的分块（`semchunk`），可下载为 `.jsonl`。
+- **提示注入检测器** —— 标记试图劫持下游 LLM 的文本。
+
+---
+
 ## 🔌 API
 
 适用于自动化（n8n、脚本）。需要身份验证。
@@ -212,6 +240,15 @@ curl -b cookies.txt -F "file=@document.pdf"     https://你的域名/api/convert
 ```
 
 `POST /api/redact`（multipart/form-data）：`file`（PDF 或图片），可选 `lang`、`anon_strict`、`anon_detectors`、`anon_rules`。返回**已遮蔽 PDF**（二进制），响应头 `X-Redacted-Entities` 为涂黑条目数。
+
+Markdown 后处理（输入 JSON，输出 JSON 或文件）：
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/api/export` | POST | 将 Markdown 转换为目标格式（`docx`、`odt`、`epub`、`html`、`latex`、`rst`、`docbook`、`jats`、`tei`、`opml`）。 |
+| `/api/compact` | POST | 去除空白的 Markdown，节省 token。 |
+| `/api/chunk` | POST | 有 token 上限的 RAG 分块（返回 `.jsonl`）。 |
+| `/api/model_prices` | GET | 实时模型定价与上下文窗口（OpenRouter，已缓存）。 |
 
 ---
 

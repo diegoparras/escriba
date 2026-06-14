@@ -2,9 +2,9 @@
 
 # ✍️ Escriba
 
-**N’importe quel document en Markdown propre et anonymisé — prêt pour les LLM.**
+**Le traducteur universel vers le langage de l’IA.**
 
-Une application web auto‑hébergeable basée sur [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
+Transformez n’importe quel document en Markdown propre et anonymisé — prêt pour n’importe quel LLM, et exportable vers Word, XML et plus encore. Un outil auto‑hébergeable qui résout les casse‑têtes liés à l’alimentation d’un LLM en documents : entrée bruitée et gourmande en tokens → Markdown propre, fuite de données sensibles → anonymisation des PII intégrée avec pseudonymisation réversible, et un panneau de préparation pour LLM intégré qui compte les tokens, estime le coût avec une tarification en temps réel, vérifie l’adéquation à la fenêtre de contexte et découpe pour le RAG. Local, en 7 langues, basé sur [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-e07f5c.svg)](../../LICENSE)
 [![Image Docker](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Fescriba-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/escriba/pkgs/container/escriba)
@@ -31,6 +31,9 @@ Une application web auto‑hébergeable basée sur [Microsoft MarkItDown](https:
 - 🤖 **IA en option** — OpenAI, Google Gemini (AI Studio) ou OpenRouter, avec un réglage par défaut **« Sans IA »**. Les modèles sont listés automatiquement.
 - 🛡️ **Anonymisation des PII pour LLM** — moteur de confidentialité local complet : modèle NER ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + champs de factures par mise en page + détecteurs validés (carte **Luhn**, **IBAN**) + vos propres règles **RE2**. Cinq modes de sortie : *typé*, *anonyme*, **pseudonymisation réversible** («PERSONA_1» → envoyez au LLM → ré-hydratez localement), **masquage partiel** (••••-3456) et **hash stable** (même donnée → même pseudonyme d’un document à l’autre).
 - ⬛ **Caviardage visuel** — téléchargez votre PDF ou image scannée avec les PII **noircies sur la page**. Caviardage réel : le texte et les pixels en dessous sont supprimés du fichier, pas recouverts.
+- 📤 **Export vers 10 formats** — au‑delà du Markdown, un menu de téléchargement unifié exporte le résultat vers **Word (.docx)**, ODT, EPUB, HTML, LaTeX, reStructuredText et **XML** structuré (DocBook, JATS, TEI, OPML) — propulsé par [Pandoc](https://pandoc.org/). Sans aucune IA.
+- 🧠 **Panneau de préparation pour LLM** — chaque conversion affiche un **comptage des tokens** (tiktoken), les **tokens et le coût économisés** par l’anonymisation, une **estimation du coût par modèle en temps réel** (tarification issue d’[OpenRouter](https://openrouter.ai/)), l’**adéquation à la fenêtre de contexte** pour des centaines de modèles, un **découpage RAG** en un clic et un **détecteur d’injection de prompt**. Tout en local, sans appel à l’IA.
+- 🔬 **Extraction PDF avancée** — moteur [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) en option pour les mises en page complexes : meilleur ordre de lecture (XY‑Cut++) et hiérarchie des titres, avec repli automatique sur l’extracteur par défaut.
 - 🌍 **7 langues d’interface** — English, Español, Français, Português, Italiano, 中文, 日本語 (détectées automatiquement, changeables).
 - 👑😇👤 **Trois niveaux d’accès** — DIOS / ANGEL / HUMANO, chacun avec son mot de passe et ses limites.
 - 🔒 **Privé par conception** — les fichiers envoyés sont supprimés juste après la conversion ; rien n’est stocké.
@@ -188,6 +191,31 @@ est partagée entre workers via le Redis intégré.
 
 ---
 
+## 📤 Export au‑delà du Markdown
+
+Le Markdown propre est le cœur, mais le **menu unique « Format… »** de la carte de résultat le transforme en ce dont votre flux de travail a besoin — choisissez un format, puis cliquez sur **Télécharger** (il ne se déclenche jamais tout seul). Propulsé par [Pandoc](https://pandoc.org/), sans aucune IA :
+
+| Famille | Formats |
+|---|---|
+| Markdown | `.md`, compact (espaces supprimés), fragments RAG (`.jsonl`) |
+| Bureautique et ebook | **Word `.docx`**, ODT, EPUB |
+| Web et composition | HTML, LaTeX, reStructuredText |
+| XML structuré | **DocBook**, **JATS**, **TEI**, **OPML** |
+| Confidentialité | PDF caviardé (PII noircies — voir ci‑dessus) |
+
+## 🧠 Panneau de préparation pour LLM
+
+Chaque conversion s’accompagne d’un panneau compact qui prépare le texte pour un modèle — entièrement en local, sans aucun appel à l’IA :
+
+- **Comptage des tokens** avec `tiktoken` (`o200k_base`, intégré à l’image — fonctionne hors ligne).
+- **Tokens et coût économisés** par l’anonymisation, pour voir ce que vous apporte la suppression des PII.
+- **Estimation du coût par modèle en temps réel** — tarification et fenêtres de contexte issues d’[OpenRouter](https://openrouter.ai/) (des centaines de modèles, en cache) pour que les chiffres ne soient jamais périmés.
+- **Adéquation à la fenêtre de contexte** — d’un coup d’œil, quels modèles peuvent accueillir le document.
+- **Découpage RAG en un clic** — découpe en fragments chevauchants et bornés en tokens (`semchunk`), téléchargeables en `.jsonl`.
+- **Détecteur d’injection de prompt** — signale le texte qui tente de détourner un LLM en aval.
+
+---
+
 ## 🔌 API
 
 Utile pour l’automatisation (n8n, scripts). Authentification requise.
@@ -218,6 +246,15 @@ curl -b cookies.txt -F "file=@document.pdf"     https://votre-domaine/api/conver
 ```
 
 `POST /api/redact` (multipart/form-data) : `file` (PDF ou image), options `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Renvoie le **PDF caviardé** (binaire) avec l’en-tête `X-Redacted-Entities`.
+
+Post‑traitement du Markdown (JSON en entrée, JSON ou fichier en sortie) :
+
+| Endpoint | Méthode | Description |
+|---|---|---|
+| `/api/export` | POST | Convertit le Markdown vers un format cible (`docx`, `odt`, `epub`, `html`, `latex`, `rst`, `docbook`, `jats`, `tei`, `opml`). |
+| `/api/compact` | POST | Markdown avec espaces supprimés pour économiser des tokens. |
+| `/api/chunk` | POST | Fragments RAG bornés en tokens (renvoie un `.jsonl`). |
+| `/api/model_prices` | GET | Tarification et fenêtres de contexte des modèles en temps réel (OpenRouter, en cache). |
 
 ---
 

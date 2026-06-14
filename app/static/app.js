@@ -276,9 +276,12 @@ function render() {
   updateSelUI();
 }
 function updateSelUI() {
-  const sel = [...items.values()].filter(i => i.selected !== false).length;
+  const all = [...items.values()];
+  const sel = all.filter(i => i.selected !== false).length;
+  // Solo se puede convertir lo que está pendiente (en cola o con error) y seleccionado.
+  const pending = all.filter(i => i.selected !== false && (i.status === "queued" || i.status === "error")).length;
   const cv = $("convertBtn");
-  if (cv) { cv.textContent = sel ? t("queue.convertSel", { n: sel }) : t("act.convertAll"); cv.disabled = converting || sel === 0; }
+  if (cv) { cv.textContent = pending ? t("queue.convertSel", { n: pending }) : t("act.convertAll"); cv.disabled = converting || pending === 0; }
   const cnt = $("abCount"); if (cnt) cnt.textContent = t("queue.title", { n: items.size });
   const a = $("selAll"); if (a) a.checked = items.size > 0 && sel === items.size;
 }
@@ -334,6 +337,11 @@ function wireResult(root, it) {
   const body = root.querySelector(".item-body");
   const canRedact = CAPS && CAPS.anonimal && it.file &&
     /\.(pdf|png|jpe?g|tiff?|bmp|webp)$/i.test(it.name || "");
+  // Un solo desplegable con TODAS las salidas; PDF censurado destacado al final.
+  const expGroup = (CAPS.export && CAPS.export.length)
+    ? `<optgroup label="${t("dl.convert")}">${CAPS.export.map(f => `<option value="exp:${f.id}">${escapeHtml(f.label)}</option>`).join("")}</optgroup>` : "";
+  const redactGroup = canRedact
+    ? `<optgroup label="${t("dl.privacy")}"><option value="redact">${t("res.redact")}</option></optgroup>` : "";
   body.innerHTML = `
     <div class="resbar">
       <div class="tabs">
@@ -342,11 +350,18 @@ function wireResult(root, it) {
         <div class="tab" data-v="split">${t("tab.split")}</div>
       </div>
       <div class="spacer" style="flex:1"></div>
-      ${canRedact ? `<button class="btn ghost sm" data-act="redact">${t("res.redact")}</button>` : ""}
       <button class="btn ghost sm" data-act="zoom">${t("res.zoom")}</button>
       <button class="btn ghost sm" data-act="copy">${t("res.copy")}</button>
-      <button class="btn ghost sm" data-act="dl">${t("res.dl")}</button>
-      ${(CAPS.export && CAPS.export.length) ? `<select class="export-sel" title="${t("exp.title")}"><option value="">${t("exp.label")}</option>${CAPS.export.map(f => `<option value="${f.id}">${escapeHtml(f.label)}</option>`).join("")}</select>` : ""}
+      <select class="dl-sel">
+        <option value="">${t("dl.pick")}</option>
+        <optgroup label="Markdown">
+          <option value="md">Markdown (.md)</option>
+          <option value="compact">${t("dl.compact")}</option>
+          <option value="chunks">${t("dl.chunks")}</option>
+        </optgroup>
+        ${expGroup}${redactGroup}
+      </select>
+      <button class="btn sm dl-go" disabled>${t("dl.download")}</button>
     </div>
     ${it.result.llm ? '<div class="llm-panel-wrap"></div>' : ""}
     <div class="view"><div class="preview"></div><pre class="raw hidden"></pre></div>`;
@@ -365,20 +380,32 @@ function wireResult(root, it) {
     await navigator.clipboard.writeText(it.result.markdown || "");
     e.target.textContent = "✓"; setTimeout(() => e.target.textContent = t("res.copy"), 1400);
   });
-  body.querySelector('[data-act="dl"]').addEventListener("click", () => downloadMd(baseName(it.name), it.result.markdown || ""));
   body.querySelector('[data-act="zoom"]').addEventListener("click", () => openResultModal(it));
-  const rb = body.querySelector('[data-act="redact"]');
-  if (rb) rb.addEventListener("click", () => redactItem(it, rb));
+  // Desplegable de formato → habilita el botón Descargar (NO dispara solo).
+  const dl = body.querySelector(".dl-sel"), go = body.querySelector(".dl-go");
+  dl.addEventListener("change", () => {
+    go.disabled = !dl.value;
+    go.textContent = dl.value === "redact" ? t("res.redact") : t("dl.download");
+  });
+  go.addEventListener("click", () => doDownload(it, dl.value, go));
   const pw = body.querySelector(".llm-panel-wrap");
   if (pw) mountPanel(pw, it);
-  const es = body.querySelector(".export-sel");
-  if (es) es.addEventListener("change", () => exportItem(it, es));
+  esEnhanceAll(body);
+}
+
+// Ejecuta la descarga/acción según el formato elegido en el desplegable unificado.
+function doDownload(it, value, btn) {
+  if (!value) return;
+  if (value === "md") return downloadMd(baseName(it.name), it.result.markdown || "");
+  if (value === "compact") return downloadProcessed("/api/compact", it, btn, baseName(it.name) + "-compacto.md");
+  if (value === "chunks") return downloadProcessed("/api/chunk", it, btn, baseName(it.name) + "-chunks.jsonl");
+  if (value === "redact") return redactItem(it, btn);
+  if (value.startsWith("exp:")) return exportFmt(it, value.slice(4), btn);
 }
 
 // Exportar el Markdown a otro formato (Pandoc) y descargar.
-async function exportItem(it, sel) {
-  const fmt = sel.value; if (!fmt) return;
-  sel.disabled = true;
+async function exportFmt(it, fmt, btn) {
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = "…";
   try {
     const fd = new FormData();
     fd.append("text", it.result.markdown || "");
@@ -392,7 +419,7 @@ async function exportItem(it, sel) {
     a.download = baseName(it.name) + "." + ext;
     a.click(); URL.revokeObjectURL(a.href);
   } catch (e) { toast(e.message, "err"); }
-  finally { sel.disabled = false; sel.value = ""; }
+  finally { btn.disabled = false; btn.textContent = orig; }
 }
 
 // ---------- Panel LLM: catálogo de modelos EN VIVO (OpenRouter) ----------
@@ -426,8 +453,8 @@ function mountPanel(wrap, it) {
     return `<tr>
       <td class="lm-name" title="${escapeHtml(m.id)}">${escapeHtml(m.name)}</td>
       <td class="lm-cost">~${usd(cost)}</td>
-      <td><span class="llm-fit ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${ctxLabel(m.ctx)}</span></td>
-      <td><button class="lm-rm" data-id="${escapeHtml(id)}" title="${t("llm.remove")}">✕</button></td>
+      <td><span class="llm-fit ${ok ? "ok" : "no"}">${ok ? IC_CHK : IC_X}${ctxLabel(m.ctx)}</span></td>
+      <td><button class="lm-rm" data-id="${escapeHtml(id)}" title="${t("llm.remove")}">${IC_X}</button></td>
     </tr>`;
   }).join("");
   // desplegable para agregar (agrupado por proveedor), sin los ya elegidos
@@ -436,21 +463,20 @@ function mountPanel(wrap, it) {
   const opts = Object.keys(groups).sort().map(g =>
     `<optgroup label="${escapeHtml(g)}">${groups[g].map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)} · ${usd(m.in)}/M · ${ctxLabel(m.ctx)}</option>`).join("")}</optgroup>`
   ).join("");
-  const saved = d.saved > 0
-    ? `<button class="llm-link" data-llm="compact">${t("llm.saved")} −${d.saved_pct}% · ${t("llm.compactDl")}</button>` : "";
+  const subParts = [];
+  if (d.saved > 0) subParts.push(`${t("llm.saved")} ${d.saved_pct}%`);
+  subParts.push(`${nf(d.pii_count)} ${t("llm.pii")}`);
   const inj = (d.injection && d.injection.length)
-    ? `<div class="llm-warn">⚠️ <b>${t("llm.injection")}</b> ${d.injection.map(x => escapeHtml(x.why)).join(" · ")}</div>` : "";
+    ? `<div class="llm-warn">${IC_WARN}<div><b>${t("llm.injection")}</b> ${d.injection.map(x => escapeHtml(x.why)).join(" · ")}</div></div>` : "";
   wrap.innerHTML = `<div class="llm-panel">
     <div class="llm-head">
       <div class="llm-tok"><b>${nf(d.tokens)}</b> tokens</div>
-      ${saved}
-      <span class="llm-meta">🛡️ ${nf(d.pii_count)} ${t("llm.pii")} · 📦 ${nf(d.chunks)} ${t("llm.chunks")} <button class="llm-link" data-llm="chunks">${t("llm.chunksDl")}</button></span>
+      <span class="llm-sub">${subParts.join(" · ")}</span>
     </div>
     <table class="llm-tbl"><thead><tr><th>${t("llm.model")}</th><th>${t("llm.cost")}</th><th>${t("llm.context")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
     <select class="llm-add"><option value="">+ ${t("llm.addModel")}</option>${opts}</select>
     ${inj}
   </div>`;
-  // interacción
   wrap.querySelector(".llm-add").addEventListener("change", (e) => {
     if (!e.target.value) return;
     setPanelModels([...sel, e.target.value]); mountPanel(wrap, it);
@@ -458,10 +484,7 @@ function mountPanel(wrap, it) {
   wrap.querySelectorAll(".lm-rm").forEach(b => b.addEventListener("click", () => {
     setPanelModels(sel.filter(x => x !== b.dataset.id)); mountPanel(wrap, it);
   }));
-  const cb = wrap.querySelector('[data-llm="compact"]');
-  if (cb) cb.addEventListener("click", () => downloadProcessed("/api/compact", it, cb, baseName(it.name) + "-compacto.md"));
-  const kb = wrap.querySelector('[data-llm="chunks"]');
-  if (kb) kb.addEventListener("click", () => downloadProcessed("/api/chunk", it, kb, baseName(it.name) + "-chunks.jsonl"));
+  esEnhanceAll(wrap);
 }
 
 // Re-envía el Markdown del resultado a un endpoint de proceso y baja el archivo.
@@ -482,23 +505,37 @@ async function downloadProcessed(url, it, btn, filename, mime) {
 }
 
 // Censura visual: re-envía el archivo original y baja el PDF tachado.
-function redactFormData(it, preview) {
+let _redactStrict = "balanceado";
+function redactFormData(it, preview, strict) {
   const fd = new FormData();
   fd.append("file", it.file);
   const lang = $("lang")?.value; if (lang) fd.append("lang", lang);
-  fd.append("anon_strict", $("anonStrict")?.value || "balanceado");
+  fd.append("anon_strict", strict || _redactStrict || "balanceado");
   fd.append("anon_detectors", getEnabledDetectors().join(","));
   const rules = getAnonRules(); if (rules) fd.append("anon_rules", rules);
   if (preview) fd.append("preview", "1");
   return fd;
 }
 
-// Paso 1: vista previa — muestra QUÉ se va a tachar y con qué config, antes de generar.
-async function redactItem(it, btn) {
-  const orig = btn.textContent;
-  btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> ${t("redact.scanning")}`;
+// Paso 1: elegir el NIVEL de censura.
+function redactItem(it) { openRedactLevel(it); }
+function openRedactLevel(it) {
+  const cards = document.querySelectorAll("#redactLevelModal .rl-card");
+  cards.forEach(c => { c.classList.toggle("rl-on", c.dataset.level === _redactStrict); c.onclick = () => { cards.forEach(x => x.classList.remove("rl-on")); c.classList.add("rl-on"); }; });
+  $("rlGo").onclick = () => {
+    const lvl = document.querySelector("#redactLevelModal .rl-card.rl-on")?.dataset.level || "balanceado";
+    closeModal("redactLevelModal");
+    runRedactPreview(it, lvl);
+  };
+  openModal("redactLevelModal");
+}
+
+// Paso 2: escanear con ese nivel y mostrar la vista previa de selección.
+async function runRedactPreview(it, strict) {
+  _redactStrict = strict;
+  toast(t("redact.scanning"), "");
   try {
-    const res = await fetch("/api/redact", { method: "POST", body: redactFormData(it, true) });
+    const res = await fetch("/api/redact", { method: "POST", body: redactFormData(it, true, strict) });
     if (!res.ok) {
       let msg = "Error " + res.status;
       try { msg = (await res.json()).detail || msg; } catch {}
@@ -506,7 +543,6 @@ async function redactItem(it, btn) {
     }
     openRedactPreview(it, await res.json());
   } catch (e) { toast(e.message, "err"); }
-  finally { btn.disabled = false; btn.textContent = orig; }
 }
 
 const REDACT_TYPES = { PERSONA: "Nombre", DOMICILIO: "Domicilio", EMAIL: "Email", TEL: "Teléfono", ID: "ID/CUIT/DNI", FECHA: "Fecha", URL: "URL", SECRETO: "Secreto", DATO: "Dato" };
@@ -543,6 +579,7 @@ function openRedactPreview(it, d) {
     confirmRedact(it, only);
   };
   $("rpAdjust").onclick = () => { closeModal("redactPreviewModal"); openSettings("anon"); };
+  $("rpLevel").onclick = () => { closeModal("redactPreviewModal"); openRedactLevel(it); };
   openModal("redactPreviewModal");
 }
 
@@ -587,6 +624,111 @@ window.addEventListener("keydown", (e) => {
 });
 
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+
+// ============ Escriba Select: dropdown custom (reemplaza el <select> nativo) ============
+const ES_CHEV = '<svg class="es-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const ES_CHECK = '<svg class="es-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const IC_CHK = '<svg class="ic-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const IC_X = '<svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const IC_WARN = '<svg class="ic-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+const esNorm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+function esCloseAll(except) {
+  document.querySelectorAll(".es-wrap.open").forEach(w => { if (w !== except) { w.classList.remove("open"); w.querySelector(".es-pop")?.classList.add("hidden"); } });
+}
+function esEnhanceAll(root) { (root || document).querySelectorAll("select:not([data-es])").forEach(esEnhance); }
+function esEnhance(sel) {
+  sel.dataset.es = "1";
+  const inline = sel.classList.contains("export-sel") || sel.id === "anonStrict";
+  const wrap = document.createElement("div");
+  wrap.className = "es-wrap" + (inline ? " es-inline" : "");
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.appendChild(sel); sel.classList.add("es-native");
+  const trigger = document.createElement("button");
+  trigger.type = "button"; trigger.className = "es-trigger";
+  trigger.innerHTML = `<span class="es-val"></span>${ES_CHEV}`;
+  const pop = document.createElement("div");
+  pop.className = "es-pop hidden"; pop.setAttribute("role", "listbox");
+  wrap.appendChild(trigger); wrap.appendChild(pop);
+  const valEl = trigger.querySelector(".es-val");
+  let rows = [], active = -1;
+
+  const readOpts = () => {
+    const out = [];
+    Array.from(sel.children).forEach(ch => {
+      if (ch.tagName === "OPTGROUP") Array.from(ch.children).forEach(o => out.push({ v: o.value, t: o.textContent, g: ch.label }));
+      else if (ch.tagName === "OPTION") {
+        const tt = ch.textContent.trim();
+        const ph = ch.value === "" && (tt.startsWith("+") || /…$/.test(tt) || tt.endsWith("..."));
+        out.push({ v: ch.value, t: ch.textContent, g: null, ph });
+      }
+    });
+    return out;
+  };
+  const syncTrigger = () => {
+    const opts = readOpts(); const o = opts.find(x => x.v === sel.value) || opts[0];
+    valEl.textContent = o ? o.t : ""; valEl.classList.toggle("placeholder", !!(o && o.ph));
+  };
+  syncTrigger();
+  sel.addEventListener("change", syncTrigger);
+
+  const setActive = (i) => {
+    if (rows[active]) rows[active].classList.remove("active");
+    active = Math.max(0, Math.min(i, rows.length - 1));
+    if (rows[active]) { rows[active].classList.add("active"); rows[active].scrollIntoView({ block: "nearest" }); }
+  };
+  const choose = (v) => { sel.value = v; sel.dispatchEvent(new Event("change", { bubbles: true })); syncTrigger(); close(); };
+  function onKey(e) {
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive(active + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive(active - 1); }
+    else if (e.key === "Home") { e.preventDefault(); setActive(0); }
+    else if (e.key === "End") { e.preventDefault(); setActive(rows.length - 1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (rows[active]) rows[active].click(); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); trigger.focus(); }
+  }
+  const render = () => {
+    const opts = readOpts();
+    const useSearch = opts.filter(o => !o.ph).length > 8;
+    pop.innerHTML = "";
+    if (useSearch) {
+      const search = document.createElement("input");
+      search.className = "es-search"; search.placeholder = t("es.search"); search.type = "text";
+      pop.appendChild(search);
+      search.addEventListener("input", () => renderRows(opts, search.value));
+      search.addEventListener("keydown", onKey);
+      setTimeout(() => search.focus(), 10);
+    }
+    const list = document.createElement("div"); list.className = "es-list"; pop.appendChild(list);
+    function renderRows(opts, f) {
+      list.innerHTML = ""; rows = []; active = -1;
+      const ff = esNorm(f); let lastG = null, shown = 0;
+      opts.forEach(o => {
+        if (o.ph || (ff && !esNorm(o.t).includes(ff))) return;
+        if (o.g && o.g !== lastG) { const g = document.createElement("div"); g.className = "es-group"; g.textContent = o.g; list.appendChild(g); lastG = o.g; }
+        const row = document.createElement("div");
+        row.className = "es-opt" + (o.v === sel.value ? " es-sel" : "");
+        row.setAttribute("role", "option");
+        const parts = o.t.split(" · ");
+        row.innerHTML = `<span class="es-label">${escapeHtml(parts[0])}</span>${parts.length > 1 ? `<span class="es-badge">${escapeHtml(parts.slice(1).join(" · "))}</span>` : ""}${ES_CHECK}`;
+        row.addEventListener("click", () => choose(o.v));
+        row.addEventListener("mousemove", () => { if (rows[active]) rows[active].classList.remove("active"); active = rows.indexOf(row); });
+        list.appendChild(row); rows.push(row); shown++;
+      });
+      if (!shown) { const e = document.createElement("div"); e.className = "es-empty"; e.textContent = t("es.none"); list.appendChild(e); }
+    }
+    renderRows(opts, "");
+  };
+  const open = () => {
+    render(); pop.classList.remove("hidden"); wrap.classList.add("open"); esCloseAll(wrap);
+    active = rows.findIndex(r => r.classList.contains("es-sel"));
+  };
+  const close = () => { wrap.classList.remove("open"); pop.classList.add("hidden"); };
+  trigger.addEventListener("click", (e) => { e.stopPropagation(); wrap.classList.contains("open") ? close() : open(); });
+  trigger.addEventListener("keydown", (e) => {
+    if (!wrap.classList.contains("open")) { if (["ArrowDown", "Enter", " "].includes(e.key)) { e.preventDefault(); open(); setActive(0); } }
+    else onKey(e);
+  });
+}
+document.addEventListener("click", (e) => { if (!e.target.closest(".es-wrap")) esCloseAll(); });
 function downloadMd(name, md) {
   const blob = new Blob([md], { type: "text/markdown" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name + ".md"; a.click(); URL.revokeObjectURL(a.href);
@@ -662,7 +804,7 @@ async function convertAll(onlySelected = false) {
   converting = true; $("convertBtn").disabled = true;
   pending.forEach(it => { it.status = "queued"; it.progress = 0; }); render();
   await Promise.all(pending.map(convertOne));
-  converting = false; $("convertBtn").disabled = false;
+  converting = false; updateSelUI();   // re-evalúa: si no queda nada pendiente, queda deshabilitado
   const ok = [...items.values()].filter(it => it.status === "done").length;
   const bad = [...items.values()].filter(it => it.status === "error").length;
   toast(bad ? t("toast.doneErr", { ok, bad }) : t("toast.done", { ok }), bad ? "" : "ok");
@@ -947,4 +1089,5 @@ window.addEventListener("scroll", () => {
   I18N.apply();
 })();
 
+esEnhanceAll(document);   // dropdowns custom para todos los <select> estáticos
 loadMe();

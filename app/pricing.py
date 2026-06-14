@@ -64,4 +64,4 @@ def catalog():
             return data, True
     except Exception as e:  # noqa: BLE001
         log.warning("Precios de OpenRouter no disponibles (%s); uso fallback", e)
-    return (_cache["data"] or _FALLBACK), bool(_cache["data"])
+    return (_cache["data"] or _FALLBACK), False

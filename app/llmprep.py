@@ -156,5 +156,7 @@ def analyze(markdown: str, pii_count: int = 0) -> dict:
         "saved_pct": round(100 * saved / toks) if toks else 0,
         "injection": detect_injection(md),
         "pii_count": int(pii_count or 0),
-        "chunks": chunk_count(md),
+        # Estimación aritmética (sin chunkear): el chunking real ocurre en /api/chunk;
+        # 960 = size 1024 - overlap 64.
+        "chunks": (max(1, -(-toks // 960)) if toks else 0),
     }

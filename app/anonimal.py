@@ -149,6 +149,11 @@ _TYPE_NAME = {
 }
 
 
+def type_name(placeholder):
+    """Nombre legible del tipo para un placeholder (público; ver _TYPE_NAME)."""
+    return _TYPE_NAME.get(placeholder, "DATO")
+
+
 def _pseudonymize(text, merged):
     """Reemplaza cada entidad por un token ESTABLE y tipado («PERSONA_1»…).
     Mismo valor → mismo token (consistencia). Devuelve (texto, cantidad, mapa

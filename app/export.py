@@ -7,6 +7,7 @@ Pandoc es un binario único (sin modelos, RAM ~0). Lo corremos con --sandbox par
 que no pueda leer archivos del sistema desde el Markdown.
 """
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -70,7 +71,6 @@ def convert(markdown: str, fmt_id: str):
                 with open(out_path, "rb") as fh:
                     data = fh.read()
             finally:
-                import os
                 try:
                     os.unlink(out_path)
                 except OSError:

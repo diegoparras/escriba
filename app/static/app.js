@@ -246,32 +246,113 @@ function addUrl(url) {
   render();
 }
 
+// Actualiza SOLO las partes mutables de un nodo .item ya creado (sin tocar .item-body).
+function updateItemNode(it, root) {
+  // (a) chip de estado
+  const chip = root.querySelector("#chip" + it.id);
+  if (chip) { chip.className = "chip " + it.status; chip.innerHTML = chipLabel(it); }
+  // (b) subtítulo
+  const small = root.querySelector(".meta .small");
+  if (small) small.textContent = itemSub(it);
+  // (c) barra de progreso: presente solo si converting
+  const top = root.querySelector(".item-top");
+  let pbar = root.querySelector(".pbar");
+  if (it.status === "converting") {
+    if (!pbar) {
+      top.insertAdjacentHTML("afterend", `<div class="pbar"><span id="pb${it.id}" style="width:${it.progress}%"></span></div>`);
+    } else {
+      const sp = pbar.querySelector("span"); if (sp) sp.style.width = it.progress + "%";
+    }
+  } else if (pbar) {
+    pbar.remove();
+  }
+  // (d) checkbox de selección: presente solo si NO está done
+  let cb = root.querySelector(".sel");
+  if (it.status === "done") {
+    if (cb) cb.remove();
+  } else if (!cb) {
+    top.insertAdjacentHTML("afterbegin", `<input type="checkbox" class="sel" ${it.selected !== false ? "checked" : ""} title="Seleccionar" />`);
+    const ncb = top.querySelector(".sel");
+    ncb.addEventListener("click", e => e.stopPropagation());
+    ncb.addEventListener("change", () => { it.selected = ncb.checked; updateSelUI(); });
+  } else {
+    cb.checked = it.selected !== false;
+  }
+}
+
+function ensureQhead(q) {
+  let qhead = q.querySelector(".qhead");
+  if (!qhead) {
+    q.insertAdjacentHTML("afterbegin",
+      `<div class="qhead">
+         <h3></h3>
+         <div class="spacer" style="flex:1"></div>
+         <label class="selall"><input type="checkbox" id="selAll"/> ${t("queue.all")}</label>
+       </div>`);
+    qhead = q.querySelector(".qhead");
+    qhead.querySelector("#selAll").addEventListener("change", (e) => {
+      const v = e.target.checked;
+      items.forEach(i => { i.selected = v; });
+      // Actualizar checkboxes en su lugar SIN re-renderizar (no destruir nada).
+      items.forEach(it => {
+        const cb = document.querySelector("#it" + it.id + " .sel");
+        if (cb) cb.checked = v;
+      });
+      updateSelUI();
+    });
+  }
+  return qhead;
+}
+
 function render() {
   const q = $("queue");
   $("appWrap").classList.toggle("has-files", items.size > 0);
   if (items.size === 0) { q.innerHTML = ""; updateZipBtn(); return; }
+
+  const qhead = ensureQhead(q);
   const selCount = [...items.values()].filter(i => i.selected !== false).length;
-  q.innerHTML =
-    `<div class="qhead">
-       <h3>${t("queue.title", { n: items.size })}</h3>
-       <div class="spacer" style="flex:1"></div>
-       <label class="selall"><input type="checkbox" id="selAll" ${selCount === items.size ? "checked" : ""}/> ${t("queue.all")}</label>
-     </div>` +
-    [...items.values()].map(itemHtml).join("");
+  qhead.querySelector("h3").textContent = t("queue.title", { n: items.size });
+  qhead.querySelector("#selAll").checked = selCount === items.size;
+
+  // Crear/actualizar cada ítem por clave (id), conservando el DOM existente.
   items.forEach(it => {
-    const root = document.getElementById("it" + it.id);
-    if (!root) return;
-    root.querySelector(".item-top").addEventListener("click", (e) => {
-      if (e.target.closest(".x") || e.target.closest(".sel")) return;
-      if (it.status === "done") root.classList.toggle("open");
-    });
-    const cb = root.querySelector(".sel");
-    if (cb) { cb.addEventListener("click", e => e.stopPropagation()); cb.addEventListener("change", () => { it.selected = cb.checked; updateSelUI(); }); }
-    const x = root.querySelector(".x");
-    if (x) x.addEventListener("click", () => { items.delete(it.id); render(); updateZipBtn(); });
-    if (it.status === "done") wireResult(root, it);
+    let root = document.getElementById("it" + it.id);
+    if (!root) {
+      q.insertAdjacentHTML("beforeend", itemHtml(it));
+      root = document.getElementById("it" + it.id);
+      root.querySelector(".item-top").addEventListener("click", (e) => {
+        if (e.target.closest(".x") || e.target.closest(".sel")) return;
+        if (it.status === "done") root.classList.toggle("open");
+      });
+      const cb = root.querySelector(".sel");
+      if (cb) { cb.addEventListener("click", e => e.stopPropagation()); cb.addEventListener("change", () => { it.selected = cb.checked; updateSelUI(); }); }
+      const x = root.querySelector(".x");
+      if (x) x.addEventListener("click", () => { items.delete(it.id); render(); updateZipBtn(); });
+    } else {
+      updateItemNode(it, root);
+    }
+    // Cablear el resultado EXACTAMENTE una vez, conservando su estado en renders posteriores.
+    if (it.status === "done" && root.dataset.wired !== "1") {
+      wireResult(root, it);
+      root.dataset.wired = "1";
+    }
   });
-  $("selAll").addEventListener("change", (e) => { const v = e.target.checked; items.forEach(i => i.selected = v); render(); });
+
+  // Quitar del DOM cualquier .item cuyo id ya no esté en items.
+  q.querySelectorAll(".item").forEach(node => {
+    const id = +node.id.slice(2);
+    if (!items.has(id)) node.remove();
+  });
+
+  // Mantener el orden del DOM acorde al orden de inserción de items.
+  let prev = qhead;
+  items.forEach(it => {
+    const node = document.getElementById("it" + it.id);
+    if (!node) return;
+    if (prev.nextElementSibling !== node) q.insertBefore(node, prev.nextElementSibling);
+    prev = node;
+  });
+
   updateZipBtn();
   updateSelUI();
 }
@@ -298,8 +379,7 @@ function pdfBadge(r) {
   const tp = pdfTypeI18n(r.pdf_type);
   return (r.ocr_applied ? t("sub.pdfocr", { t: tp }) : t("sub.pdf", { t: tp }));
 }
-function itemHtml(it) {
-  const chip = { queued: t("chip.queued"), converting: chipText(it), done: t("chip.done"), error: t("chip.error") }[it.status];
+function itemSub(it) {
   let sub;
   if (it.status === "done" && it.result) {
     sub = t("sub.stats", { w: it.result.words.toLocaleString(), c: it.result.chars.toLocaleString(), ms: it.result.elapsed_ms, min: Math.max(1, Math.round(it.result.words / 200)) }) + pdfBadge(it.result);
@@ -307,6 +387,14 @@ function itemHtml(it) {
     if (it.result.note) sub += ` · ⚠️ ${it.result.note}`;
   } else if (it.status === "error") sub = it.error;
   else sub = it.isUrl ? t("sub.url") : humanSize(it.size);
+  return sub;
+}
+function chipLabel(it) {
+  return { queued: t("chip.queued"), converting: chipText(it), done: t("chip.done"), error: t("chip.error") }[it.status];
+}
+function itemHtml(it) {
+  const chip = chipLabel(it);
+  const sub = itemSub(it);
   const pbar = it.status === "converting"
     ? `<div class="pbar"><span id="pb${it.id}" style="width:${it.progress}%"></span></div>` : "";
   const checkbox = it.status === "done"
@@ -411,13 +499,10 @@ async function exportFmt(it, fmt, btn) {
     fd.append("text", it.result.markdown || "");
     fd.append("fmt", fmt);
     const res = await fetch("/api/export", { method: "POST", body: fd });
-    if (!res.ok) { let m = "Error " + res.status; try { m = (await res.json()).detail || m; } catch {} throw new Error(m); }
+    if (!res.ok) throw new Error(await errFromRes(res));
     const ext = res.headers.get("X-Export-Ext") || fmt;
     const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = baseName(it.name) + "." + ext;
-    a.click(); URL.revokeObjectURL(a.href);
+    triggerDownload(blob, baseName(it.name) + "." + ext);
   } catch (e) { toast(e.message, "err"); }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
@@ -488,18 +573,16 @@ function mountPanel(wrap, it) {
 }
 
 // Re-envía el Markdown del resultado a un endpoint de proceso y baja el archivo.
-async function downloadProcessed(url, it, btn, filename, mime) {
+async function downloadProcessed(url, it, btn, filename) {
   const orig = btn.textContent;
   btn.disabled = true; btn.textContent = "…";
   try {
     const fd = new FormData();
     fd.append("text", it.result.markdown || "");
     const res = await fetch(url, { method: "POST", body: fd });
-    if (!res.ok) throw new Error("Error " + res.status);
+    if (!res.ok) throw new Error(await errFromRes(res));
     const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+    triggerDownload(blob, filename);
   } catch (e) { toast(e.message, "err"); }
   finally { btn.disabled = false; btn.textContent = orig; }
 }
@@ -536,11 +619,7 @@ async function runRedactPreview(it, strict) {
   toast(t("redact.scanning"), "");
   try {
     const res = await fetch("/api/redact", { method: "POST", body: redactFormData(it, true, strict) });
-    if (!res.ok) {
-      let msg = "Error " + res.status;
-      try { msg = (await res.json()).detail || msg; } catch {}
-      throw new Error(msg);
-    }
+    if (!res.ok) throw new Error(await errFromRes(res));
     openRedactPreview(it, await res.json());
   } catch (e) { toast(e.message, "err"); }
 }
@@ -590,23 +669,15 @@ async function confirmRedact(it, only) {
     const fd = redactFormData(it, false);
     if (only && only.length) fd.append("only", JSON.stringify(only));
     const res = await fetch("/api/redact", { method: "POST", body: fd });
-    if (!res.ok) {
-      let msg = "Error " + res.status;
-      try { msg = (await res.json()).detail || msg; } catch {}
-      throw new Error(msg);
-    }
+    if (!res.ok) throw new Error(await errFromRes(res));
     const n = res.headers.get("X-Redacted-Entities") || "0";
     const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = baseName(it.name) + "-censurado.pdf";
-    a.click(); URL.revokeObjectURL(a.href);
+    triggerDownload(blob, baseName(it.name) + "-censurado.pdf");
     toast(t("redact.done", { n }), "ok");
   } catch (e) { toast(e.message, "err"); }
 }
 
 // ---------- Modales ----------
-const APP_VERSION = "1.3.4";
 function openModal(id) { $(id).classList.remove("hidden"); }
 function closeModal(id) { $(id).classList.add("hidden"); }
 function openResultModal(it) {
@@ -638,7 +709,7 @@ function esCloseAll(except) {
 function esEnhanceAll(root) { (root || document).querySelectorAll("select:not([data-es])").forEach(esEnhance); }
 function esEnhance(sel) {
   sel.dataset.es = "1";
-  const inline = sel.classList.contains("export-sel") || sel.id === "anonStrict";
+  const inline = sel.id === "anonStrict";
   const wrap = document.createElement("div");
   wrap.className = "es-wrap" + (inline ? " es-inline" : "");
   sel.parentNode.insertBefore(wrap, sel);
@@ -729,9 +800,11 @@ function esEnhance(sel) {
   });
 }
 document.addEventListener("click", (e) => { if (!e.target.closest(".es-wrap")) esCloseAll(); });
+async function errFromRes(res){ let m = "Error " + res.status; try { m = (await res.json()).detail || m; } catch {} return m; }
+function triggerDownload(blob, filename){ const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
 function downloadMd(name, md) {
   const blob = new Blob([md], { type: "text/markdown" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name + ".md"; a.click(); URL.revokeObjectURL(a.href);
+  triggerDownload(blob, name + ".md");
 }
 
 // ---------- Conversión con barra de progreso (XHR) ----------
@@ -859,7 +932,7 @@ function collectPseudoMap(data) {
 }
 function rehydrate(text) {
   const tokens = Object.keys(PSEUDO_MAP).sort((a, b) => b.length - a.length);
-  for (const t of tokens) text = text.split(t).join(PSEUDO_MAP[t]);
+  for (const tok of tokens) text = text.split(tok).join(PSEUDO_MAP[tok]);
   return text;
 }
 $("rehydrateBtn")?.addEventListener("click", () => {
@@ -940,17 +1013,17 @@ $("anonStrict")?.addEventListener("change", () => {
 window.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") convertAll(); });
 
 // ---------- Confeti ----------
-const cv = $("confetti"), cx = cv.getContext("2d");
-function resize() { cv.width = innerWidth; cv.height = innerHeight; }
+const confettiCv = $("confetti"), confettiCx = confettiCv.getContext("2d");
+function resize() { confettiCv.width = innerWidth; confettiCv.height = innerHeight; }
 resize(); window.addEventListener("resize", resize);
 function celebrate() {
   const N = 140, parts = [], colors = ["#f0a98c","#e98e6f","#f5ece4","#e08a66","#ffd2bf"];
   for (let i = 0; i < N; i++) parts.push({ x: innerWidth/2, y: innerHeight/3, vx: (Math.random()-.5)*14, vy: Math.random()*-12-4, g: .35, s: Math.random()*6+4, c: colors[i%colors.length], r: Math.random()*Math.PI, vr: (Math.random()-.5)*.3 });
   let frames = 0;
   (function loop() {
-    cx.clearRect(0,0,cv.width,cv.height);
-    parts.forEach(p => { p.vy += p.g; p.x += p.vx; p.y += p.vy; p.r += p.vr; cx.save(); cx.translate(p.x,p.y); cx.rotate(p.r); cx.fillStyle = p.c; cx.fillRect(-p.s/2,-p.s/2,p.s,p.s*1.6); cx.restore(); });
-    if (frames++ < 130) requestAnimationFrame(loop); else cx.clearRect(0,0,cv.width,cv.height);
+    confettiCx.clearRect(0,0,confettiCv.width,confettiCv.height);
+    parts.forEach(p => { p.vy += p.g; p.x += p.vx; p.y += p.vy; p.r += p.vr; confettiCx.save(); confettiCx.translate(p.x,p.y); confettiCx.rotate(p.r); confettiCx.fillStyle = p.c; confettiCx.fillRect(-p.s/2,-p.s/2,p.s,p.s*1.6); confettiCx.restore(); });
+    if (frames++ < 130) requestAnimationFrame(loop); else confettiCx.clearRect(0,0,confettiCv.width,confettiCv.height);
   })();
 }
 
@@ -1026,7 +1099,6 @@ document.querySelectorAll("#settingsTabs .tab").forEach(tb => {
     document.querySelectorAll("#settingsModal .stab-panel").forEach(p => p.classList.toggle("hidden", p.dataset.stabPanel !== tb.dataset.stab));
   });
 });
-$("aboutVer").textContent = "v" + APP_VERSION;
 
 // ---------- Cookies de YouTube (se guardan SOLO en este navegador) ----------
 const YTCK_STORE = "escriba_yt_cookies";

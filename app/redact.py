@@ -84,7 +84,7 @@ def entities_pdf(path: str, strict: bool = False, rules=None, detector_ids=None)
             txt = full[s["start"]:s["end"]].strip()
             if not txt:
                 continue
-            typ = anonimal._TYPE_NAME.get(s["placeholder"], "DATO")
+            typ = anonimal.type_name(s["placeholder"])
             key = (txt.lower(), typ)
             if key in agg:
                 agg[key]["count"] += 1

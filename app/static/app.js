@@ -1372,8 +1372,10 @@ function mountPagesPick(root, it) {
 const _pgMode = () => (document.querySelector('input[name="pgMode"]:checked') || {}).value || "all";
 function _pgSetMode(mode) {
   document.querySelectorAll('input[name="pgMode"]').forEach(r => { r.checked = (r.value === mode); });
-  $("pgRangeRow").hidden = mode !== "range";
-  $("pgSingleRow").hidden = mode !== "single";
+  // Los sub-controles quedan SIEMPRE visibles e invitan a usarlos; el modo se
+  // activa solo al tocarlos (ver listeners). Atenuamos el que no está activo.
+  $("pgRangeRow").classList.toggle("pg-dim", mode !== "range");
+  $("pgSingleRow").classList.toggle("pg-dim", mode !== "single");
   _pgUpdateSummary();
 }
 function _pgRenderChips() {
@@ -1411,8 +1413,10 @@ function _pgUpdateSummary() {
   $("pgApply").disabled = !n;
 }
 function _pgAddChip() {
+  if (_pgMode() !== "single") _pgSetMode("single");   // tocar "Agregar" activa el modo sueltas
   const v = parseInt($("pgChipInput").value, 10);
-  if (v >= 1 && !_pgChips.includes(v)) { _pgChips.push(v); _pgRenderChips(); _pgUpdateSummary(); }
+  if (v >= 1 && !_pgChips.includes(v)) { _pgChips.push(v); _pgRenderChips(); }
+  _pgUpdateSummary();
   $("pgChipInput").value = ""; $("pgChipInput").focus();
 }
 function _pgSetTotal(n) {
@@ -1453,7 +1457,13 @@ function openPagesFor(it, btnEl) {
 (function wirePagesModal() {
   if (!$("pgApply")) return;
   document.querySelectorAll('input[name="pgMode"]').forEach(r => r.addEventListener("change", () => _pgSetMode(r.value)));
-  ["pgFrom", "pgTo"].forEach(id => $(id).addEventListener("input", _pgUpdateSummary));
+  // A prueba de dummies: tocar los campos de un modo SELECCIONA ese modo solo.
+  const useRange = () => { if (_pgMode() !== "range") _pgSetMode("range"); else _pgUpdateSummary(); };
+  ["pgFrom", "pgTo"].forEach(id => {
+    $(id).addEventListener("focus", useRange);
+    $(id).addEventListener("input", useRange);
+  });
+  $("pgChipInput").addEventListener("focus", () => { if (_pgMode() !== "single") _pgSetMode("single"); });
   $("pgChipAdd").addEventListener("click", _pgAddChip);
   $("pgChipInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); _pgAddChip(); } });
   $("pgApply").addEventListener("click", () => {

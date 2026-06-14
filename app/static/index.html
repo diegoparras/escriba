@@ -339,6 +339,7 @@
   .pg-opt input { width: auto; }
   .pg-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px 28px; color: var(--muted); font-size: 13.5px; }
   .pg-sub input[type="number"] { width: 86px; text-align: center; }
+  .pg-sub.pg-dim { opacity: .5; transition: opacity .15s; }
   .pg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .pg-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--card-2); border: 1px solid var(--border);
     border-radius: 999px; padding: 3px 6px 3px 11px; font-size: 13px; color: var(--text); }
@@ -848,7 +849,7 @@
 
     <label class="pg-opt"><input type="radio" name="pgMode" value="range" />
       <span data-i18n="pages.modeRange">Un rango de páginas</span></label>
-    <div class="pg-sub" id="pgRangeRow" hidden>
+    <div class="pg-sub" id="pgRangeRow">
       <span data-i18n="pages.from">Desde</span>
       <input id="pgFrom" type="number" min="1" value="1" />
       <span data-i18n="pages.to">hasta</span>
@@ -857,7 +858,7 @@
 
     <label class="pg-opt"><input type="radio" name="pgMode" value="single" />
       <span data-i18n="pages.modeSingle">Páginas sueltas</span></label>
-    <div class="pg-sub" id="pgSingleRow" hidden>
+    <div class="pg-sub" id="pgSingleRow">
       <div id="pgChips" class="pg-chips"></div>
       <input id="pgChipInput" type="number" min="1" data-i18n-ph="pages.addPh" placeholder="N° de página" />
       <button id="pgChipAdd" type="button" class="btn ghost sm" data-i18n="pages.add">Agregar</button>

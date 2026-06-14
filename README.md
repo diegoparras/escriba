@@ -34,9 +34,10 @@ context‑window fit and chunks for RAG. Local, in 7 languages, built on
 - 🎙️🎬 **Audio & video** — local, offline transcription with Whisper (mp3, wav, mp4, mov, mkv…).
 - 🔗 **URLs & YouTube** — convert a web page or fetch a YouTube transcript.
 - 🔍 **Smart OCR** — text in images is recognized automatically; scanned **and rotated** PDFs are detected, OCR’d and auto‑straightened on the fly.
+- 📑 **Page selection** — for long PDFs, convert only the pages you need: a range (`5–67`), individual pages (`1, 6, 9`) or a mix (`1, 2, 5‑67`). Chosen per file with a simple picker that shows the document’s page count — no syntax to remember.
 - 🤖 **Optional AI** — OpenAI, Google Gemini (AI Studio) or OpenRouter, with a **“No AI”** default. Models are listed automatically.
 - 🛡️ **PII anonymization for LLMs** — a full local privacy engine ([see below](#-anonymization-for-llms)): NER model ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + layout‑aware invoice fields + validated detectors (credit‑card **Luhn**, **IBAN**) + your own **RE2** rules. Five output modes: *typed*, *anonymous*, **reversibly pseudonymized** (`«PERSONA_1»` → send to the LLM → re‑hydrate locally), **partial masking** (`••••‑3456`) and **stable hashing** (same data → same pseudonym across documents).
-- ⬛ **Visual redaction** — download your PDF or scanned image with the PII **blacked out on the page**. True redaction: the text and the pixels underneath are removed from the file, not covered.
+- ⬛ **Visual redaction** — download your PDF or scanned image with the PII **blacked out on the page**. True redaction: the text and the pixels underneath are removed from the file, not covered — and the document’s **metadata** (title, author, keywords, XMP) is scrubbed too, so nothing leaks in *Properties*.
 - 📤 **Export to 10 formats** — beyond Markdown, one unified download menu exports the result to **Word (.docx)**, ODT, EPUB, HTML, LaTeX, reStructuredText and structured **XML** (DocBook, JATS, TEI, OPML) — powered by [Pandoc](https://pandoc.org/). No LLM involved.
 - 🧠 **LLM prep panel** — every conversion shows a **token count** (tiktoken), the **tokens & cost saved** by anonymization, a **live per‑model cost estimate** (pricing pulled from [OpenRouter](https://openrouter.ai/)), **context‑window fit** across hundreds of models, one‑click **RAG chunking**, and a **prompt‑injection detector**. All local, no AI calls.
 - 🔬 **Advanced PDF extraction** — opt‑in [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) engine for complex layouts: better reading order (XY‑Cut++) and heading hierarchy, with automatic fallback to the default extractor.
@@ -230,8 +231,9 @@ restore map and your custom rules never leave your machine.
 **“Redacted PDF”** download: every detected entity is **blacked out on the page**
 using true redaction — `apply_redactions` removes the underlying text *and* the
 image pixels beneath each box, so the data no longer exists in the output file.
-Scanned documents are OCR’d automatically first. Same detection stack
-(NER + detectors + invoice layout + your RE2 rules), zero extra RAM.
+The PDF’s **metadata is wiped** too (DocInfo + XMP), so a redacted file can’t leak
+the name/ID via *Properties* or `exiftool`. Scanned documents are OCR’d automatically
+first. Same detection stack (NER + detectors + invoice layout + your RE2 rules), zero extra RAM.
 
 ---
 

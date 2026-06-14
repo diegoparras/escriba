@@ -28,9 +28,10 @@
 - 🎙️🎬 **音频与视频** —— 使用 Whisper 进行本地、离线转写（mp3、wav、mp4、mov、mkv 等）。
 - 🔗 **网址与 YouTube** —— 转换网页，或获取 YouTube 视频的字幕转写。
 - 🔍 **智能 OCR** —— 自动识别图片中的文字；扫描版**及旋转的** PDF 会被即时检测、OCR 处理并自动纠正方向。
+- 📑 **页面选择** —— 对于长篇 PDF，只转换你需要的页面：可指定范围（`5-67`）、单独页面（`1, 6, 9`）或两者混合（`1, 2, 5-67`）。每个文件单独选择，通过一个简单的选择器完成，并显示文档的总页数 —— 无需记忆任何语法。
 - 🤖 **可选 AI** —— OpenAI、Google Gemini（AI Studio）或 OpenRouter，默认 **「不使用 AI」**。自动列出可用模型。
 - 🛡️ **面向 LLM 的 PII 匿名化** — 完整的本地隐私引擎：NER 模型（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）+ 基于版面的票据字段 + 校验型检测器（信用卡 **Luhn**、**IBAN**）+ 你自己的 **RE2** 规则。五种输出模式：*类型化*、*匿名*、**可还原假名化**（«PERSONA_1» → 发送给 LLM → 本地还原）、**部分掩码**（••••-3456）和**稳定哈希**（相同数据 → 跨文档相同假名）。
-- ⬛ **可视化遮蔽** — 下载 PII **在页面上被涂黑**的 PDF 或扫描图片。真正的涂黑：文字与底层像素都从文件中删除，而不是覆盖。
+- ⬛ **可视化遮蔽** — 下载 PII **在页面上被涂黑**的 PDF 或扫描图片。真正的涂黑：文字与底层像素都从文件中删除，而不是覆盖 —— 文档的**元数据**（标题、作者、关键词、XMP）也会被一并清除，因此在*属性*中不会泄露任何信息。PDF 的**元数据也会被抹除**（DocInfo + XMP），因此遮蔽后的文件不会通过*属性*或 `exiftool` 泄露姓名/证件号。
 - 📤 **导出为 10 种格式** — 除 Markdown 外，一个统一的下载菜单可将结果导出为 **Word（.docx）**、ODT、EPUB、HTML、LaTeX、reStructuredText 以及结构化 **XML**（DocBook、JATS、TEI、OPML）—— 由 [Pandoc](https://pandoc.org/) 提供支持。不涉及任何 LLM。
 - 🧠 **LLM 准备面板** — 每次转换都会显示 **token 数**（tiktoken）、匿名化所**节省的 token 与成本**、**按模型的实时成本估算**（定价取自 [OpenRouter](https://openrouter.ai/)）、跨数百个模型的**上下文窗口适配**情况、一键 **RAG 分块**以及一个**提示注入检测器**。全部本地运行，无任何 AI 调用。
 - 🔬 **高级 PDF 提取** — 可选启用 [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) 引擎，处理复杂版面：更优的阅读顺序（XY-Cut++）与标题层级，并在需要时自动回退到默认提取器。

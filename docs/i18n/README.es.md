@@ -28,9 +28,10 @@ Convierte cualquier documento en Markdown limpio y anónimo — listo para cualq
 - 🎙️🎬 **Audio y video** — transcripción local y sin conexión con Whisper (mp3, wav, mp4, mov, mkv…).
 - 🔗 **URLs y YouTube** — convierte una página web u obtiene la transcripción de un video de YouTube.
 - 🔍 **OCR inteligente** — el texto de las imágenes se reconoce automáticamente; los PDF escaneados **y rotados** se detectan, procesan con OCR y enderezan al vuelo.
+- 📑 **Selección de páginas** — en PDF largos, convierte solo las páginas que necesitas: un rango (`5–67`), páginas sueltas (`1, 6, 9`) o una mezcla (`1, 2, 5‑67`). Se elige por archivo con un selector simple que muestra la cantidad de páginas del documento — sin sintaxis que recordar.
 - 🤖 **IA opcional** — OpenAI, Google Gemini (AI Studio) u OpenRouter, con un valor por defecto de **«Sin IA»**. Los modelos se listan automáticamente.
 - 🛡️ **Anonimización de PII para LLMs** — motor de privacidad local completo: modelo NER ([OpenAI Privacy Filter](https://github.com/openai/privacy-filter)) + campos de comprobantes por layout + detectores validados (tarjeta **Luhn**, **IBAN**) + tus propias reglas **RE2**. Cinco modos de salida: *tipado*, *anónimo*, **seudonimizado reversible** («PERSONA_1» → envíalo al LLM → re-hidrátalo localmente), **enmascarado parcial** (••••-3456) y **hash estable** (mismo dato → mismo seudónimo entre documentos).
-- ⬛ **Censura visual** — descarga tu PDF o imagen escaneada con el PII **tachado sobre la página**. Redacción real: el texto y los píxeles de abajo se eliminan del archivo, no se tapan.
+- ⬛ **Censura visual** — descarga tu PDF o imagen escaneada con el PII **tachado sobre la página**. Redacción real: el texto y los píxeles de abajo se eliminan del archivo, no se tapan — y los **metadatos** del documento (título, autor, palabras clave, XMP) también se limpian, para que nada se filtre en *Propiedades*.
 - 📤 **Exporta a 10 formatos** — más allá de Markdown, un único menú de descarga unificado exporta el resultado a **Word (.docx)**, ODT, EPUB, HTML, LaTeX, reStructuredText y **XML** estructurado (DocBook, JATS, TEI, OPML) — con [Pandoc](https://pandoc.org/). Sin IA de por medio.
 - 🧠 **Panel de preparación para LLMs** — cada conversión muestra un **conteo de tokens** (tiktoken), los **tokens y el costo ahorrados** por la anonimización, una **estimación de costo en vivo por modelo** (precios obtenidos de [OpenRouter](https://openrouter.ai/)), si **entra en la ventana de contexto** de cientos de modelos, **troceado para RAG** con un clic y un **detector de inyección de prompts**. Todo local, sin llamadas a IA.
 - 🔬 **Extracción avanzada de PDF** — motor opcional [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) para layouts complejos: mejor orden de lectura (XY‑Cut++) y jerarquía de títulos, con repliegue automático al extractor por defecto.
@@ -245,7 +246,7 @@ curl -b cookies.txt -F "file=@documento.pdf"    https://tu-dominio/api/convert
   "pdf_type": "escaneado", "ocr_applied": true, "note": null }
 ```
 
-`POST /api/redact` (multipart/form-data): `file` (PDF o imagen), opcionales `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Devuelve el **PDF censurado** (binario) con la cabecera `X-Redacted-Entities` (cantidad de datos tachados).
+`POST /api/redact` (multipart/form-data): `file` (PDF o imagen), opcionales `lang`, `anon_strict`, `anon_detectors`, `anon_rules`. Devuelve el **PDF censurado** (binario) con la cabecera `X-Redacted-Entities` (cantidad de datos tachados). Los **metadatos del PDF también se borran** (DocInfo + XMP), para que un archivo censurado no pueda filtrar el nombre/ID vía *Propiedades* o `exiftool`.
 
 Posprocesamiento de Markdown (JSON de entrada, JSON o archivo de salida):
 

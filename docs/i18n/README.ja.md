@@ -28,9 +28,10 @@
 - 🎙️🎬 **音声・動画** —— Whisper によるローカル・オフラインの文字起こし（mp3、wav、mp4、mov、mkv など）。
 - 🔗 **URL と YouTube** —— Web ページを変換、または YouTube 動画の文字起こしを取得。
 - 🔍 **スマート OCR** —— 画像内の文字を自動認識し、スキャン・**回転した** PDF を検出してその場で OCR 処理・自動回転補正。
+- 📑 **ページ選択** —— 長い PDF では必要なページだけを変換：範囲（`5-67`）、個別ページ（`1, 6, 9`）、またはその組み合わせ（`1, 2, 5-67`）。ファイルごとに、文書のページ数を表示するシンプルなピッカーで選択 —— 覚えるべき構文はありません。
 - 🤖 **任意の AI** —— OpenAI、Google Gemini（AI Studio）、OpenRouter。既定は **「AI を使わない」**。モデルは自動で一覧表示。
 - 🛡️ **LLM 向け PII 匿名化** — 完全ローカルのプライバシーエンジン：NER モデル（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）+ レイアウト解析による請求書フィールド + 検証付き検出器（クレジットカード **Luhn**、**IBAN**）+ 独自の **RE2** ルール。出力は 5 モード：*型付き*、*匿名*、**可逆仮名化**（«PERSONA_1» → LLM に送信 → ローカルで復元）、**部分マスク**（••••-3456）、**安定ハッシュ**（同じデータ → 文書をまたいで同じ仮名）。
-- ⬛ **ビジュアル墨消し** — PII を**ページ上で黒塗り**した PDF・スキャン画像をダウンロード。本物の墨消し：テキストと下のピクセルはファイルから削除されます（上に被せるだけではありません）。
+- ⬛ **ビジュアル墨消し** — PII を**ページ上で黒塗り**した PDF・スキャン画像をダウンロード。本物の墨消し：テキストと下のピクセルはファイルから削除されます（上に被せるだけではありません） —— さらに文書の**メタデータ**（タイトル、作成者、キーワード、XMP）も消去されるため、*プロパティ* から何も漏れません。
 - 📤 **10 形式へエクスポート** — Markdown だけでなく、統一されたダウンロードメニュー 1 つで結果を **Word（.docx）**、ODT、EPUB、HTML、LaTeX、reStructuredText、構造化 **XML**（DocBook、JATS、TEI、OPML）へエクスポート —— [Pandoc](https://pandoc.org/) を使用。LLM は一切関与しません。
 - 🧠 **LLM 準備パネル** — 変換ごとに **トークン数**（tiktoken）、匿名化による **節約トークン数とコスト**、**モデル別のライブコスト見積もり**（価格は [OpenRouter](https://openrouter.ai/) から取得）、数百モデルにわたる **コンテキストウィンドウへの収まり**、ワンクリックの **RAG チャンク分割**、そして **プロンプトインジェクション検出器** を表示。すべてローカルで、AI 呼び出しはありません。
 - 🔬 **高度な PDF 抽出** — 複雑なレイアウト向けにオプトインの [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) エンジン：より優れた読み順（XY-Cut++）と見出し階層を実現し、既定の抽出器へ自動フォールバックします。
@@ -243,7 +244,7 @@ curl -b cookies.txt -F "file=@document.pdf"     https://あなたのドメイン
   "pdf_type": "scanned", "ocr_applied": true, "note": null }
 ```
 
-`POST /api/redact`（multipart/form-data）：`file`（PDF または画像）、任意で `lang`、`anon_strict`、`anon_detectors`、`anon_rules`。**墨消し済み PDF**（バイナリ）を返し、ヘッダー `X-Redacted-Entities` に黒塗り件数が入ります。
+`POST /api/redact`（multipart/form-data）：`file`（PDF または画像）、任意で `lang`、`anon_strict`、`anon_detectors`、`anon_rules`。**墨消し済み PDF**（バイナリ）を返し、ヘッダー `X-Redacted-Entities` に黒塗り件数が入ります。PDF の**メタデータも消去**されるため（DocInfo + XMP）、墨消し済みファイルが *プロパティ* や `exiftool` 経由で名前/ID を漏らすことはありません。
 
 Markdown の後処理（JSON 入力、JSON またはファイル出力）：
 

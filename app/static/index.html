@@ -980,6 +980,12 @@
   </div>
 </div>
 
+<div id="ttsFloat" class="hidden" style="position:fixed;right:16px;bottom:16px;z-index:80;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:var(--card);border:1px solid var(--border);box-shadow:0 12px 30px rgba(0,0,0,.20)">
+  <span aria-hidden="true" style="font-size:16px">🔊</span>
+  <button id="ttsFloatToggle" class="btn ghost sm" type="button" aria-label="Play/Pause" style="min-width:36px">⏸</button>
+  <button id="ttsFloatStop" class="btn ghost sm" type="button" aria-label="Stop">✕</button>
+</div>
+
 <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="true"></div>
 <script src="/static/i18n.js?v=__VER__"></script>
 <script src="/static/app.js?v=__VER__"></script>

@@ -660,10 +660,30 @@ function _ttsFillVoices(sel, voices) {
   sel.innerHTML = html || `<option value="">—</option>`;
 }
 
+// Reproductor flotante: al cerrar el modal con el audio sonando, aparece un mini
+// player fijo para pausarlo/detenerlo (si no, el audio seguía sonando sin control).
+function syncTtsFloat() {
+  const a = $("ttsAudio"), b = $("ttsFloatToggle");
+  if (a && b) b.textContent = a.paused ? "▶" : "⏸";
+}
+function showTtsFloat() { $("ttsFloat")?.classList.remove("hidden"); syncTtsFloat(); }
+function hideTtsFloat() { $("ttsFloat")?.classList.add("hidden"); }
+function ttsOnModalClose() {
+  const a = $("ttsAudio");
+  if (a && a.getAttribute("src") && !a.paused && !a.ended) showTtsFloat();
+}
+
 async function openTtsModal(it) {
   const status = $("ttsStatus"), audio = $("ttsAudio"), dlBtn = $("ttsDownload");
   status.textContent = ""; audio.classList.add("hidden"); audio.removeAttribute("src");
   dlBtn.disabled = true; _ttsBlob = null;
+  hideTtsFloat();
+  // controles del mini-player flotante (idempotente)
+  audio.onended = () => hideTtsFloat();
+  audio.onpause = () => syncTtsFloat();
+  audio.onplay = () => syncTtsFloat();
+  $("ttsFloatToggle").onclick = () => { if (audio.paused) audio.play().catch(() => {}); else audio.pause(); };
+  $("ttsFloatStop").onclick = () => { audio.pause(); try { audio.currentTime = 0; } catch {} hideTtsFloat(); };
   if (!_ttsVoices) {
     try { const r = await fetch("/api/tts_voices"); _ttsVoices = r.ok ? ((await r.json()).voices || []) : []; }
     catch { _ttsVoices = []; }
@@ -841,6 +861,7 @@ function openModal(id) {
 function closeModal(id) {
   const el = $(id); if (!el) return;
   el.classList.add("hidden");
+  if (id === "ttsModal") ttsOnModalClose();
   const st = _modalState.get(id);
   if (st) {
     el.removeEventListener("keydown", st.onKeydown);

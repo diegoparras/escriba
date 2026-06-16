@@ -48,3 +48,8 @@ semchunk>=2.2,<4.0
 # Extracción avanzada de PDF (estructura/layout/orden de lectura). Determinístico,
 # sin GPU; corre sobre la JVM (se instala default-jre-headless en el Dockerfile).
 opendataloader-pdf>=0.4
+
+# Exportación del documento a formatos de DATOS (además de Pandoc): JSON (stdlib),
+# YAML (PyYAML) y TOML (tomli-w, solo escritura). Livianos, sin binarios.
+PyYAML>=6.0,<7.0
+tomli-w>=1.0,<2.0

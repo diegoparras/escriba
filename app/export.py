@@ -20,8 +20,10 @@ Seguridad / lectura de archivos locales:
     \\input/\\include/<object>) y NO habilitamos --extract-media, evitando includes
     y resolución de rutas locales arbitrarias desde el Markdown.
 """
+import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -51,13 +53,80 @@ _FORMATS = [
 ]
 _BY_ID = {f[0]: f for f in _FORMATS}
 
+# Formatos de DATOS (no usan Pandoc): el documento como estructura serializable.
+# id → (id, ext, mime, label)
+_DATA_FORMATS = [
+    ("json", "json", "application/json; charset=utf-8", "JSON"),
+    ("yaml", "yaml", "application/yaml; charset=utf-8", "YAML"),
+    ("toml", "toml", "application/toml; charset=utf-8", "TOML"),
+]
+_DATA_BY_ID = {f[0]: f for f in _DATA_FORMATS}
+
 
 def available() -> bool:
     return shutil.which("pandoc") is not None
 
 
 def catalog():
-    return [{"id": f[0], "ext": f[2], "label": f[5]} for f in _FORMATS]
+    # Los de Pandoc requieren Pandoc; los de datos (JSON/YAML/TOML) siempre están.
+    pandoc = [{"id": f[0], "ext": f[2], "label": f[5]} for f in _FORMATS] if available() else []
+    data = [{"id": f[0], "ext": f[1], "label": f[3]} for f in _DATA_FORMATS]
+    return pandoc + data
+
+
+def _doc_to_struct(markdown: str, title: str | None = None) -> dict:
+    """Parte el Markdown en una estructura serializable (título + secciones por
+    encabezados + markdown completo + metadatos). Sin valores None (TOML-safe)."""
+    md = markdown or ""
+    doc_title = (title or "").strip()
+    sections = []
+    cur = {"heading": "", "level": 0}
+    buf = []
+
+    def _flush():
+        content = "\n".join(buf).strip()
+        if content or cur["heading"]:
+            sections.append({"heading": cur["heading"], "level": cur["level"], "content": content})
+
+    for ln in md.split("\n"):
+        m = re.match(r"^(#{1,6})\s+(.*\S)\s*$", ln)
+        if m:
+            _flush()
+            level = len(m.group(1))
+            heading = m.group(2).strip()
+            if not doc_title and level == 1:
+                doc_title = heading
+            cur = {"heading": heading, "level": level}
+            buf = []
+        else:
+            buf.append(ln)
+    _flush()
+
+    return {
+        "title": doc_title or "Documento",
+        "words": len(re.findall(r"\S+", md)),
+        "chars": len(md),
+        "sections": sections,
+        "markdown": md,
+    }
+
+
+def _serialize_data(fmt_id: str, data: dict) -> bytes:
+    if fmt_id == "json":
+        return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    if fmt_id == "yaml":
+        try:
+            import yaml
+        except ImportError as e:
+            raise ExportError("El soporte YAML no está instalado en el servidor.") from e
+        return yaml.safe_dump(data, allow_unicode=True, sort_keys=False).encode("utf-8")
+    if fmt_id == "toml":
+        try:
+            import tomli_w
+        except ImportError as e:
+            raise ExportError("El soporte TOML no está instalado en el servidor.") from e
+        return tomli_w.dumps(data).encode("utf-8")
+    raise ExportError("Formato de datos no soportado.")
 
 
 def convert(markdown: str, fmt_id: str, title: str | None = None):
@@ -66,6 +135,13 @@ def convert(markdown: str, fmt_id: str, title: str | None = None):
     ``title`` setea el metadata 'title' del documento; si es None/vacío se usa
     "Documento" (mismo comportamiento histórico).
     """
+    # Formatos de datos (JSON/YAML/TOML): el documento como estructura, sin Pandoc.
+    if fmt_id in _DATA_BY_ID:
+        d = _DATA_BY_ID[fmt_id]
+        data = _serialize_data(fmt_id, _doc_to_struct(markdown, title))
+        if not data:
+            raise ExportError("La exportación quedó vacía.")
+        return data, d[1], d[2]
     f = _BY_ID.get(fmt_id)
     if not f:
         raise ExportError("Formato no soportado.")

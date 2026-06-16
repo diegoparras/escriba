@@ -34,6 +34,7 @@
 - ⬛ **可视化遮蔽** — 下载 PII **在页面上被涂黑**的 PDF 或扫描图片。真正的涂黑：文字与底层像素都从文件中删除，而不是覆盖 —— 文档的**元数据**（标题、作者、关键词、XMP）也会被一并清除，因此在*属性*中不会泄露任何信息。PDF 的**元数据也会被抹除**（DocInfo + XMP），因此遮蔽后的文件不会通过*属性*或 `exiftool` 泄露姓名/证件号。
 - 📤 **导出为 10 种格式** — 除 Markdown 外，一个统一的下载菜单可将结果导出为 **Word（.docx）**、ODT、EPUB、HTML、LaTeX、reStructuredText 以及结构化 **XML**（DocBook、JATS、TEI、OPML）—— 由 [Pandoc](https://pandoc.org/) 提供支持。不涉及任何 LLM。
 - 🔊 **文字转音频（podcast）** —— 将转换后的文档变成 **MP3**：可以是单人**旁白朗读**，也可以是由 AI 撰写脚本的**双人主持 podcast**。使用本地 [Piper](https://github.com/rhasspy/piper) 语音（离线，覆盖 es/en/pt/fr/it/de/zh 的 14 种声音），或可选的 **OpenAI** 云端语音，并支持音高 / 语速 / 音量调节。
+- ✏️ **内置 Markdown 编辑器** —— 在**全屏编辑器中实时预览**打开转换结果，导出或转语音前先整理一番。你的所有修改都会贯穿到每一种输出（Word、XML、MP3……）。
 - 🧠 **LLM 准备面板** — 每次转换都会显示 **token 数**（tiktoken）、匿名化所**节省的 token 与成本**、**按模型的实时成本估算**（定价取自 [OpenRouter](https://openrouter.ai/)）、跨数百个模型的**上下文窗口适配**情况、一键 **RAG 分块**以及一个**提示注入检测器**。全部本地运行，无任何 AI 调用。
 - 🔬 **高级 PDF 提取** — 可选启用 [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) 引擎，处理复杂版面：更优的阅读顺序（XY-Cut++）与标题层级，并在需要时自动回退到默认提取器。
 - 🌍 **7 种界面语言** —— English、Español、Français、Português、Italiano、中文、日本語（自动检测，可切换）。

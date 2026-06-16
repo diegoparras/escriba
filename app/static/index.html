@@ -895,6 +895,72 @@
   </div>
 </div>
 
+<div class="modal-backdrop hidden" id="ttsModal" data-close>
+  <div class="modal" style="width:min(640px,96vw)" role="dialog" aria-modal="true" aria-labelledby="ttsModalTitle">
+    <div class="modal-head">
+      <h3 id="ttsModalTitle" data-i18n="tts.title">Convertir a audio</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <p class="adv-note" style="margin:0 0 14px" data-i18n="tts.intro">Escuchá tu documento como narración o como un podcast a dos voces.</p>
+
+    <div class="field">
+      <label data-i18n="tts.mode">Modo</label>
+      <div style="display:flex;gap:18px;flex-wrap:wrap">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400">
+          <input type="radio" name="ttsMode" value="narration" checked>
+          <span data-i18n="tts.modeNarration">Narración (una voz)</span></label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400">
+          <input type="radio" name="ttsMode" value="podcast">
+          <span data-i18n="tts.modePodcast">Podcast (2 voces, con IA)</span></label>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px">
+      <div class="field">
+        <label for="ttsVoice" data-i18n="tts.voice">Voz</label>
+        <select id="ttsVoice"></select>
+      </div>
+      <div class="field hidden" id="ttsVoiceBRow">
+        <label for="ttsVoiceB" data-i18n="tts.voiceB">Segunda voz</label>
+        <select id="ttsVoiceB"></select>
+      </div>
+      <div class="field">
+        <label for="ttsPitch" data-i18n="tts.pitch">Tono</label>
+        <select id="ttsPitch">
+          <option value="low" data-i18n="opt.low">Bajo</option>
+          <option value="medium" selected data-i18n="opt.medium">Medio</option>
+          <option value="high" data-i18n="opt.high">Alto</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ttsSpeed" data-i18n="tts.speed">Velocidad</label>
+        <select id="ttsSpeed">
+          <option value="slow" data-i18n="opt.slow">Lenta</option>
+          <option value="normal" selected data-i18n="opt.normal">Normal</option>
+          <option value="fast" data-i18n="opt.fast">Rápida</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ttsVolume" data-i18n="tts.volume">Volumen</label>
+        <select id="ttsVolume">
+          <option value="low" data-i18n="opt.low">Bajo</option>
+          <option value="medium" selected data-i18n="opt.medium">Medio</option>
+          <option value="high" data-i18n="opt.high">Alto</option>
+        </select>
+      </div>
+    </div>
+
+    <p class="adv-note hidden" id="ttsPodNote" style="margin:10px 0 0" data-i18n="tts.podNote">El modo podcast usa la IA configurada para escribir un guion de diálogo entre dos voces.</p>
+
+    <div style="display:flex;gap:8px;margin-top:16px;align-items:center;flex-wrap:wrap">
+      <button id="ttsGo" class="btn" type="button" data-i18n="tts.generate">Generar audio</button>
+      <button id="ttsDownload" class="btn ghost" type="button" disabled data-i18n="tts.download">Descargar MP3</button>
+      <span id="ttsStatus" class="adv-note" style="margin:0"></span>
+    </div>
+    <audio id="ttsAudio" class="hidden" controls style="width:100%;margin-top:14px"></audio>
+  </div>
+</div>
+
 <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="true"></div>
 <script src="/static/i18n.js?v=__VER__"></script>
 <script src="/static/app.js?v=__VER__"></script>

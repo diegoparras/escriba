@@ -66,12 +66,48 @@ ENV TIKTOKEN_CACHE_DIR=/opt/tiktoken
 RUN mkdir -p /opt/tiktoken && \
     python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
 
+# --- TTS local: binario Piper + modelos de voz horneados (offline total) ---
+# El binario debe descargarse OK (lo necesitamos). Cada voz tolera 404 individual:
+# la app cataloga en runtime SOLO las voces que realmente quedaron en disco.
+ENV PIPER_BIN=/opt/piper/piper \
+    PIPER_VOICES_DIR=/opt/piper-voices \
+    LD_LIBRARY_PATH=/opt/piper
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && mkdir -p /opt/piper-voices \
+ && curl -fsSL https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz \
+      | tar -C /opt -xzf - \
+ && PV=/opt/piper-voices \
+ && BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main \
+ && for v in \
+      es/es_ES/sharvard/medium/es_ES-sharvard-medium \
+      es/es_ES/davefx/medium/es_ES-davefx-medium \
+      es/es_MX/claude/high/es_MX-claude-high \
+      en/en_US/amy/medium/en_US-amy-medium \
+      en/en_US/ryan/high/en_US-ryan-high \
+      en/en_GB/alan/medium/en_GB-alan-medium \
+      pt/pt_BR/faber/medium/pt_BR-faber-medium \
+      fr/fr_FR/siwis/medium/fr_FR-siwis-medium \
+      fr/fr_FR/tom/medium/fr_FR-tom-medium \
+      it/it_IT/riccardo/x_low/it_IT-riccardo-x_low \
+      it/it_IT/paola/medium/it_IT-paola-medium \
+      de/de_DE/thorsten/medium/de_DE-thorsten-medium \
+      de/de_DE/eva_k/x_low/de_DE-eva_k-x_low \
+      zh/zh_CN/huayan/medium/zh_CN-huayan-medium \
+    ; do \
+      f=$(basename "$v"); \
+      ( curl -fsSL "$BASE/$v.onnx" -o "$PV/$f.onnx" \
+        && curl -fsSL "$BASE/$v.onnx.json" -o "$PV/$f.onnx.json" ) \
+        || { echo "voz Piper no disponible: $f"; rm -f "$PV/$f.onnx" "$PV/$f.onnx.json"; }; \
+    done \
+ && echo "Voces Piper horneadas:" && ls -1 "$PV" | grep -c '\.onnx$' || true \
+ && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
 COPY app ./app
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
 # --- Usuario NO-root (mitiga explotación de parsers — M3/M4) ---
-RUN useradd -m -u 10001 appuser && chown -R appuser:appuser /app /opt/models /opt/tiktoken
+RUN useradd -m -u 10001 appuser && chown -R appuser:appuser /app /opt/models /opt/tiktoken /opt/piper /opt/piper-voices
 
 # --- Configuración (todo overridable por variables de entorno) ---
 ENV MAX_UPLOAD_MB=100 \
@@ -81,6 +117,9 @@ ENV MAX_UPLOAD_MB=100 \
     EMBEDDED_REDIS=true \
     WHISPER_MODEL=base \
     MAX_MEDIA_MINUTES=120 \
+    ENABLE_TTS=true \
+    TTS_MAX_CHARS=8000 \
+    TTS_OPENAI_MODEL=tts-1 \
     APP_VERSION=${APP_VERSION} \
     PORT=8000
 

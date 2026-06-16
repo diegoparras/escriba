@@ -464,6 +464,8 @@ function wireResult(root, it) {
     ? `<optgroup label="${t("dl.convert")}">${CAPS.export.map(f => `<option value="exp:${f.id}">${escapeHtml(f.label)}</option>`).join("")}</optgroup>` : "";
   const redactGroup = canRedact
     ? `<optgroup label="${t("dl.privacy")}"><option value="redact">${t("res.redact")}</option></optgroup>` : "";
+  const ttsGroup = (CAPS && CAPS.tts)
+    ? `<optgroup label="${t("dl.audio")}"><option value="tts">${t("tts.opt")}</option></optgroup>` : "";
   body.innerHTML = `
     <div class="resbar">
       <div class="tabs">
@@ -481,7 +483,7 @@ function wireResult(root, it) {
           <option value="compact">${t("dl.compact")}</option>
           <option value="chunks">${t("dl.chunks")}</option>
         </optgroup>
-        ${expGroup}${redactGroup}
+        ${expGroup}${ttsGroup}${redactGroup}
       </select>
       <button class="btn sm dl-go" disabled>${t("dl.download")}</button>
     </div>
@@ -507,7 +509,8 @@ function wireResult(root, it) {
   const dl = body.querySelector(".dl-sel"), go = body.querySelector(".dl-go");
   dl.addEventListener("change", () => {
     go.disabled = !dl.value;
-    go.textContent = dl.value === "redact" ? t("res.redact") : t("dl.download");
+    go.textContent = dl.value === "redact" ? t("res.redact")
+      : (dl.value === "tts" ? t("tts.open") : t("dl.download"));
   });
   go.addEventListener("click", () => doDownload(it, dl.value, go));
   const pw = body.querySelector(".llm-panel-wrap");
@@ -522,6 +525,7 @@ function doDownload(it, value, btn) {
   if (value === "compact") return downloadProcessed("/api/compact", it, btn, baseName(it.name) + "-compacto.md");
   if (value === "chunks") return downloadProcessed("/api/chunk", it, btn, baseName(it.name) + "-chunks.jsonl");
   if (value === "redact") return openRedactLevel(it);
+  if (value === "tts") return openTtsModal(it);
   if (value.startsWith("exp:")) return exportFmt(it, value.slice(4), btn);
 }
 
@@ -622,6 +626,93 @@ async function downloadProcessed(url, it, btn, filename) {
     triggerDownload(blob, filename);
   } catch (e) { toast(e.message, "err"); }
   finally { btn.disabled = false; btn.textContent = orig; }
+}
+
+// ---------- Texto → audio (TTS / podcast) ----------
+let _ttsVoices = null;   // catálogo de voces (cacheado)
+let _ttsBlob = null;     // último MP3 generado
+
+function appendLlmFields(fd) {
+  const prov = $("provider") ? $("provider").value : "";
+  const key = $("apiKey") ? $("apiKey").value.trim() : "";
+  if (prov === "none") { fd.append("llm_provider", "none"); return; }
+  if (key || (typeof serverHasKey === "function" && serverHasKey())) {
+    fd.append("llm_provider", prov || "auto");
+    const m = $("model") ? $("model").value.trim() : ""; if (m) fd.append("llm_model", m);
+    if (key) fd.append("llm_api_key", key);
+    if (prov === "custom") { const b = $("baseUrl") ? $("baseUrl").value.trim() : ""; if (b) fd.append("llm_base_url", b); }
+  }
+}
+
+function _ttsGenderMark(g) { return g === "f" ? " ♀" : g === "m" ? " ♂" : ""; }
+function _ttsFillVoices(sel, voices) {
+  const piper = voices.filter(v => v.engine === "piper");
+  const cloud = voices.filter(v => v.engine === "openai");
+  let html = "";
+  if (piper.length)
+    html += `<optgroup label="${t("tts.local")}">` +
+      piper.map(v => `<option value="${v.id}">${escapeHtml(v.label)}${_ttsGenderMark(v.gender)}</option>`).join("") + "</optgroup>";
+  if (cloud.length)
+    html += `<optgroup label="${t("tts.cloud")}">` +
+      cloud.map(v => `<option value="${v.id}">${escapeHtml(v.label)}</option>`).join("") + "</optgroup>";
+  sel.innerHTML = html || `<option value="">—</option>`;
+}
+
+async function openTtsModal(it) {
+  const status = $("ttsStatus"), audio = $("ttsAudio"), dlBtn = $("ttsDownload");
+  status.textContent = ""; audio.classList.add("hidden"); audio.removeAttribute("src");
+  dlBtn.disabled = true; _ttsBlob = null;
+  if (!_ttsVoices) {
+    try { const r = await fetch("/api/tts_voices"); _ttsVoices = r.ok ? ((await r.json()).voices || []) : []; }
+    catch { _ttsVoices = []; }
+  }
+  _ttsFillVoices($("ttsVoice"), _ttsVoices);
+  _ttsFillVoices($("ttsVoiceB"), _ttsVoices);
+  const opts = $("ttsVoiceB").options;            // 2da voz por defecto distinta
+  if (opts.length > 1) $("ttsVoiceB").selectedIndex = 1;
+  const syncMode = () => {
+    const podcast = document.querySelector("#ttsModal input[name=ttsMode]:checked")?.value === "podcast";
+    $("ttsVoiceBRow").classList.toggle("hidden", !podcast);
+    $("ttsPodNote").classList.toggle("hidden", !podcast);
+  };
+  document.querySelectorAll("#ttsModal input[name=ttsMode]").forEach(r => r.onchange = syncMode);
+  // reset a narración por defecto
+  const nar = document.querySelector("#ttsModal input[name=ttsMode][value=narration]"); if (nar) nar.checked = true;
+  syncMode();
+  $("ttsGo").onclick = () => runTts(it);
+  dlBtn.onclick = () => { if (_ttsBlob) triggerDownload(_ttsBlob, baseName(it.name) + (currentTtsMode() === "podcast" ? "-podcast.mp3" : ".mp3")); };
+  openModal("ttsModal");
+}
+
+function currentTtsMode() {
+  return document.querySelector("#ttsModal input[name=ttsMode]:checked")?.value || "narration";
+}
+
+async function runTts(it) {
+  const go = $("ttsGo"), status = $("ttsStatus"), audio = $("ttsAudio"), dlBtn = $("ttsDownload");
+  const mode = currentTtsMode();
+  const fd = new FormData();
+  fd.append("text", it.result.markdown || "");
+  fd.append("mode", mode);
+  fd.append("voice", $("ttsVoice").value || "");
+  if (mode === "podcast") fd.append("voice_b", $("ttsVoiceB").value || "");
+  fd.append("pitch", $("ttsPitch").value);
+  fd.append("speed", $("ttsSpeed").value);
+  fd.append("volume", $("ttsVolume").value);
+  appendLlmFields(fd);
+  go.disabled = true; dlBtn.disabled = true; _ttsBlob = null;
+  audio.classList.add("hidden"); audio.removeAttribute("src");
+  status.textContent = t(mode === "podcast" ? "tts.workingPod" : "tts.working");
+  try {
+    const res = await fetch("/api/tts", { method: "POST", body: fd });
+    if (!res.ok) throw new Error(await errFromRes(res));
+    _ttsBlob = await res.blob();
+    audio.src = URL.createObjectURL(_ttsBlob);
+    audio.classList.remove("hidden");
+    dlBtn.disabled = false;
+    status.textContent = t("tts.ready");
+  } catch (e) { status.textContent = ""; toast(e.message, "err"); }
+  finally { go.disabled = false; }
 }
 
 // Censura visual: re-envía el archivo original y baja el PDF tachado.

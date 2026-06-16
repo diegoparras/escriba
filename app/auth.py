@@ -106,6 +106,7 @@ ROLE_CAPS = {
         "max_file_mb": _env_int("GOD_MAX_MB", 0),     # 0 = sin límite
         "max_batch": _env_int("GOD_MAX_BATCH", 0),    # 0 = sin límite
         "audio_zip": True,
+        "tts": True,
         "ocr": True,
         "llm": True,
         "llm_custom_base": True,
@@ -120,6 +121,7 @@ ROLE_CAPS = {
         "max_file_mb": _env_int("ANGEL_MAX_MB", 100),
         "max_batch": _env_int("ANGEL_MAX_BATCH", 10),
         "audio_zip": True,
+        "tts": True,
         "ocr": True,
         "llm": True,
         "llm_custom_base": True,
@@ -134,6 +136,7 @@ ROLE_CAPS = {
         "max_file_mb": _env_int("HUMAN_MAX_MB", 25),
         "max_batch": _env_int("HUMAN_MAX_BATCH", 3),
         "audio_zip": False,
+        "tts": os.getenv("HUMAN_TTS", "false").lower() in ("1", "true", "yes"),
         "ocr": False,
         "llm": True,
         "llm_custom_base": False,

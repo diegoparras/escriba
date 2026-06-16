@@ -47,6 +47,7 @@ from . import pricing as pricing_mod
 from . import pdf_extract
 from . import redact as redact_mod
 from . import transcribe as tr_mod
+from . import tts as tts_mod
 from . import yt_transcript
 from . import security as _sec_mod
 from .security import SecurityError, _PinnedIPAdapter, assert_public_url, check_rate, ext_of, safe_fetch
@@ -136,6 +137,7 @@ def _compute_caps_static() -> dict:
         "detectors": detectors_mod.catalog() if anonimal_mod.available() else None,
         "export": export_mod.catalog() if has_export else [],
         "advancedExtract": odl_mod.available(),
+        "tts_piper": tts_mod.piper_available(),
     }
 
 
@@ -453,6 +455,9 @@ def _caps_payload(role: str) -> dict:
         d["detectors"] = caps_static["detectors"]   # catálogo para los checkboxes de la UI
     d["export"] = caps_static["export"]   # formatos de salida (Pandoc)
     d["advancedExtract"] = caps_static["advancedExtract"]   # extracción avanzada de PDF (ODL)
+    # TTS disponible para este rol = puede TTS y hay algún motor (Piper local o IA cloud).
+    _rc = auth.caps_for(role)
+    d["tts"] = bool(_rc.get("tts")) and (caps_static.get("tts_piper") or bool(_rc.get("llm")))
     return d
 
 
@@ -1202,6 +1207,103 @@ async def export_endpoint(request: Request, text: str = Form(...), fmt: str = Fo
     return Response(content=data, media_type=mime,
                     headers={"Content-Disposition": f'attachment; filename="documento.{ext}"',
                              "X-Export-Ext": ext})
+
+
+@app.get("/api/tts_voices")
+async def tts_voices(request: Request):
+    """Voces disponibles para TTS: locales (Piper) horneadas + cloud (OpenAI) si el rol puede IA."""
+    role = _require(request)
+    caps = auth.caps_for(role)
+    openai_ok = bool(caps.get("llm"))
+    return {
+        "enabled": bool(caps.get("tts")) and (tts_mod.piper_available() or openai_ok),
+        "tts": bool(caps.get("tts")),
+        "piper": tts_mod.piper_available(),
+        "cloud": openai_ok,
+        "voices": tts_mod.catalog(openai_ok=openai_ok),
+        "max_chars": tts_mod.TTS_MAX_CHARS,
+    }
+
+
+@app.post("/api/tts")
+async def tts_endpoint(
+    request: Request,
+    text: str = Form(...),
+    mode: str = Form(default="narration"),
+    voice: str = Form(default=""),
+    voice_b: Optional[str] = Form(default=None),
+    pitch: str = Form(default="medium"),
+    speed: str = Form(default="normal"),
+    volume: str = Form(default="medium"),
+    llm_provider: Optional[str] = Form(default=None),
+    llm_api_key: Optional[str] = Form(default=None),
+    llm_model: Optional[str] = Form(default=None),
+    llm_base_url: Optional[str] = Form(default=None),
+):
+    """Texto/Markdown → MP3. mode=narration (una voz) | podcast (guion IA a 2 voces)."""
+    _csrf_check(request)
+    # auth + rate-limit + tope de texto (igual que export/compact/chunk).
+    role = _require_text_endpoint(request, text)
+    caps = auth.caps_for(role)
+    if not caps.get("tts"):
+        _audit(request, role, "/api/tts", "tts", "denied")
+        raise HTTPException(status_code=403, detail="Tu rol no puede generar audio.")
+    if tts_mod.TTS_MAX_CHARS and len(text or "") > tts_mod.TTS_MAX_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"El texto supera el límite de {tts_mod.TTS_MAX_CHARS} caracteres para audio.")
+
+    # Cliente OpenAI (para voces cloud y/o el guion del podcast). Reusa la
+    # misma plomería que /api/convert (key del usuario o del servidor según rol).
+    client = None
+    if caps.get("llm"):
+        eff_key, eff_provider = resolve_key_and_provider(llm_provider, llm_api_key, caps["server_keys"])
+        if eff_key:
+            try:
+                from openai import OpenAI
+                base, _dm = resolve_provider(eff_provider, llm_base_url, eff_key, caps["llm_custom_base"])
+                if base and not caps["allow_internal"]:
+                    assert_public_url(base)  # anti-SSRF
+                client = OpenAI(api_key=eff_key, base_url=base)
+            except HTTPException:
+                raise
+            except Exception:  # noqa: BLE001
+                client = None
+
+    is_podcast = (mode or "").lower() == "podcast"
+    needs_cloud = is_podcast or str(voice).startswith("openai:") or str(voice_b or "").startswith("openai:")
+    if needs_cloud and not client:
+        raise HTTPException(
+            status_code=400,
+            detail="Esa opción necesita una API de IA configurada (pegá tu API key en Opciones).")
+    if not is_podcast and not str(voice).startswith("openai:") and not tts_mod.piper_available():
+        raise HTTPException(status_code=503, detail="El motor de voz local no está disponible.")
+
+    try:
+        if is_podcast:
+            mp3 = await asyncio.to_thread(
+                tts_mod.synthesize_podcast, text, voice or "piper:", voice_b or voice or "piper:",
+                pitch, speed, volume, client, llm_model, llm_model)
+        else:
+            mp3 = await asyncio.to_thread(
+                tts_mod.synthesize_narration, text, voice or "piper:",
+                pitch, speed, volume, client, llm_model)
+    except tts_mod.TtsError as e:
+        _audit(request, role, "/api/tts", f"tts:{mode}", "error")
+        raise HTTPException(status_code=400, detail=str(e))
+    except subprocess.TimeoutExpired:
+        _audit(request, role, "/api/tts", f"tts:{mode}", "error")
+        raise HTTPException(status_code=504, detail="La generación de audio tardó demasiado.")
+    except Exception as exc:  # noqa: BLE001
+        STATS["errors"] += 1
+        err_id = uuid.uuid4().hex[:8]
+        log.exception("TTS falló [%s] rol=%s", err_id, role)
+        raise HTTPException(status_code=422, detail=f"No se pudo generar el audio (ref {err_id}).") from exc
+
+    _audit(request, role, "/api/tts", f"tts:{mode}", "ok")
+    fname = "podcast.mp3" if is_podcast else "audio.mp3"
+    return Response(content=mp3, media_type="audio/mpeg",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @app.get("/api/model_prices")

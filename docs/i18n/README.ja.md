@@ -32,7 +32,7 @@
 - 🤖 **任意の AI** —— OpenAI、Google Gemini（AI Studio）、OpenRouter。既定は **「AI を使わない」**。モデルは自動で一覧表示。
 - 🛡️ **LLM 向け PII 匿名化** — 完全ローカルのプライバシーエンジン：NER モデル（[OpenAI Privacy Filter](https://github.com/openai/privacy-filter)）+ レイアウト解析による請求書フィールド + 検証付き検出器（クレジットカード **Luhn**、**IBAN**）+ 独自の **RE2** ルール。出力は 5 モード：*型付き*、*匿名*、**可逆仮名化**（«PERSONA_1» → LLM に送信 → ローカルで復元）、**部分マスク**（••••-3456）、**安定ハッシュ**（同じデータ → 文書をまたいで同じ仮名）。
 - ⬛ **ビジュアル墨消し** — PII を**ページ上で黒塗り**した PDF・スキャン画像をダウンロード。本物の墨消し：テキストと下のピクセルはファイルから削除されます（上に被せるだけではありません） —— さらに文書の**メタデータ**（タイトル、作成者、キーワード、XMP）も消去されるため、*プロパティ* から何も漏れません。
-- 📤 **10 形式へエクスポート** — Markdown だけでなく、統一されたダウンロードメニュー 1 つで結果を **Word（.docx）**、ODT、EPUB、HTML、LaTeX、reStructuredText、構造化 **XML**（DocBook、JATS、TEI、OPML）へエクスポート —— [Pandoc](https://pandoc.org/) を使用。LLM は一切関与しません。
+- 📤 **13 形式へエクスポート** — Markdown だけでなく、統一されたメニュー 1 つで結果を **Word (.docx)**、ODT、EPUB、HTML、LaTeX、reStructuredText、構造化 **XML**（DocBook、JATS、TEI、OPML）へ [Pandoc](https://pandoc.org/) 経由でエクスポートし、さらにデータ形式の **JSON**、**YAML**、**[TOON](https://github.com/toon-format/toon)**（コンパクトで LLM 向けにトークン効率が高い）にも対応。LLM は一切関与しません。
 - 🔊 **テキストを音声に（Podcast）** —— 変換した文書を **MP3** に：単一の声による**ナレーション**、または AI が台本を作成する**2 人ホストの Podcast**。ローカルの [Piper](https://github.com/rhasspy/piper) ボイス（オフライン、es/en/pt/fr/it/de/zh の 14 種）または任意の **OpenAI** クラウドボイスを使用し、ピッチ・速度・音量を調整可能。
 - ✏️ **組み込みの Markdown エディタ** — 変換結果を**ライブプレビュー付きの全画面エディタ**で開き、エクスポートや音声化の前に整えられます。編集内容はすべての出力（Word、XML、MP3…）に反映されます。
 - 🧠 **LLM 準備パネル** — 変換ごとに **トークン数**（tiktoken）、匿名化による **節約トークン数とコスト**、**モデル別のライブコスト見積もり**（価格は [OpenRouter](https://openrouter.ai/) から取得）、数百モデルにわたる **コンテキストウィンドウへの収まり**、ワンクリックの **RAG チャンク分割**、そして **プロンプトインジェクション検出器** を表示。すべてローカルで、AI 呼び出しはありません。

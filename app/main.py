@@ -1221,7 +1221,7 @@ async def tts_voices(request: Request):
         "piper": tts_mod.piper_available(),
         "cloud": openai_ok,
         "voices": tts_mod.catalog(openai_ok=openai_ok),
-        "max_chars": tts_mod.TTS_MAX_CHARS,
+        "max_chars": caps.get("tts_max_chars", 0),
     }
 
 
@@ -1248,10 +1248,12 @@ async def tts_endpoint(
     if not caps.get("tts"):
         _audit(request, role, "/api/tts", "tts", "denied")
         raise HTTPException(status_code=403, detail="Tu rol no puede generar audio.")
-    if tts_mod.TTS_MAX_CHARS and len(text or "") > tts_mod.TTS_MAX_CHARS:
+    # Tope de caracteres por rol (protege la CPU). 0 = sin límite (DIOS por defecto).
+    cap = caps.get("tts_max_chars", 0)
+    if cap and len(text or "") > cap:
         raise HTTPException(
             status_code=413,
-            detail=f"El texto supera el límite de {tts_mod.TTS_MAX_CHARS} caracteres para audio.")
+            detail=f"El texto supera el límite de {cap} caracteres para audio.")
 
     # Cliente OpenAI (para voces cloud y/o el guion del podcast). Reusa la
     # misma plomería que /api/convert (key del usuario o del servidor según rol).

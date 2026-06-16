@@ -107,6 +107,7 @@ ROLE_CAPS = {
         "max_batch": _env_int("GOD_MAX_BATCH", 0),    # 0 = sin límite
         "audio_zip": True,
         "tts": True,
+        "tts_max_chars": _env_int("GOD_TTS_CHARS", 0),       # 0 = sin límite
         "ocr": True,
         "llm": True,
         "llm_custom_base": True,
@@ -122,6 +123,7 @@ ROLE_CAPS = {
         "max_batch": _env_int("ANGEL_MAX_BATCH", 10),
         "audio_zip": True,
         "tts": True,
+        "tts_max_chars": _env_int("ANGEL_TTS_CHARS", 100000),   # caracteres por MP3
         "ocr": True,
         "llm": True,
         "llm_custom_base": True,
@@ -137,6 +139,7 @@ ROLE_CAPS = {
         "max_batch": _env_int("HUMAN_MAX_BATCH", 3),
         "audio_zip": False,
         "tts": os.getenv("HUMAN_TTS", "false").lower() in ("1", "true", "yes"),
+        "tts_max_chars": _env_int("HUMAN_TTS_CHARS", 20000),
         "ocr": False,
         "llm": True,
         "llm_custom_base": False,

@@ -961,6 +961,25 @@
   </div>
 </div>
 
+<div class="modal-backdrop hidden" id="mdEditorModal" data-close>
+  <div class="modal" style="width:96vw;height:92vh;max-width:1500px;display:flex;flex-direction:column" role="dialog" aria-modal="true" aria-labelledby="mdEditorTitle">
+    <div class="modal-head">
+      <h3 id="mdEditorTitle" data-i18n="edit.title">Editar Markdown</h3>
+      <button class="modal-close" data-close type="button">✕</button>
+    </div>
+    <p class="adv-note" style="margin:0 0 10px" data-i18n="edit.hint">Limpiá el texto antes de exportar o generar audio — los cambios se aplican al resultado.</p>
+    <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0">
+      <textarea id="mdeText" spellcheck="false" autocomplete="off" style="width:100%;height:100%;resize:none;font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;font-size:13px;line-height:1.5;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--card-2)"></textarea>
+      <div id="mdePreview" class="preview" style="overflow:auto;border:1px solid var(--border);border-radius:12px;padding:12px"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
+      <button id="mdeSave" class="btn" type="button" data-i18n="edit.save">Guardar cambios</button>
+      <button class="btn ghost" type="button" data-close data-i18n="edit.cancel">Cancelar</button>
+      <span id="mdeInfo" class="adv-note" style="margin:0 0 0 auto"></span>
+    </div>
+  </div>
+</div>
+
 <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="true"></div>
 <script src="/static/i18n.js?v=__VER__"></script>
 <script src="/static/app.js?v=__VER__"></script>

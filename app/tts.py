@@ -34,7 +34,7 @@ ENABLE_TTS = os.getenv("ENABLE_TTS", "true").lower() in ("1", "true", "yes", "on
 PIPER_BIN = os.getenv("PIPER_BIN", "/opt/piper/piper")
 PIPER_VOICES_DIR = os.getenv("PIPER_VOICES_DIR", "/opt/piper-voices")
 TTS_TIMEOUT = int(os.getenv("TTS_TIMEOUT", "600"))
-TTS_MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "8000"))
+TTS_MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "100000"))
 OPENAI_TTS_MODEL = os.getenv("TTS_OPENAI_MODEL", "tts-1")
 OPENAI_TTS_CHUNK = 3800  # límite de la API ~4096 char por request
 

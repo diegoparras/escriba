@@ -474,6 +474,7 @@ function wireResult(root, it) {
         <div class="tab" data-v="split">${t("tab.split")}</div>
       </div>
       <div class="spacer" style="flex:1"></div>
+      <button class="btn ghost sm" data-act="edit">${t("edit.btn")}</button>
       <button class="btn ghost sm" data-act="zoom">${t("res.zoom")}</button>
       <button class="btn ghost sm" data-act="copy">${t("res.copy")}</button>
       <select class="dl-sel">
@@ -505,6 +506,7 @@ function wireResult(root, it) {
     e.target.textContent = "✓"; setTimeout(() => e.target.textContent = t("res.copy"), 1400);
   });
   body.querySelector('[data-act="zoom"]').addEventListener("click", () => openResultModal(it));
+  body.querySelector('[data-act="edit"]').addEventListener("click", () => openMdEditor(it));
   // Desplegable de formato → habilita el botón Descargar (NO dispara solo).
   const dl = body.querySelector(".dl-sel"), go = body.querySelector(".dl-go");
   dl.addEventListener("change", () => {
@@ -846,6 +848,29 @@ function closeModal(id) {
     if (st.prevFocus && typeof st.prevFocus.focus === "function") st.prevFocus.focus();
   }
 }
+// ---------- Editor de Markdown a pantalla completa ----------
+let _mdeItem = null, _mdeTimer = null;
+function _mdePreviewUpdate() {
+  const p = $("mdePreview"); if (p) p.innerHTML = renderMd($("mdeText").value);
+  const info = $("mdeInfo"); if (info) { const s = $("mdeText").value; info.textContent = t("edit.count", { c: s.length }); }
+}
+function openMdEditor(it) {
+  _mdeItem = it;
+  const ta = $("mdeText");
+  ta.value = it.result.markdown || "";
+  _mdePreviewUpdate();
+  ta.oninput = () => { clearTimeout(_mdeTimer); _mdeTimer = setTimeout(_mdePreviewUpdate, 200); };
+  $("mdeSave").onclick = () => {
+    it.result.markdown = ta.value;
+    const root = document.getElementById("it" + it.id);
+    if (root) wireResult(root, it);   // reconstruye preview/raw/panel con lo editado
+    closeModal("mdEditorModal");
+    toast(t("edit.saved"), "ok");
+  };
+  openModal("mdEditorModal");
+  setTimeout(() => { try { ta.focus(); } catch {} }, 50);
+}
+
 function openResultModal(it) {
   $("rmTitle").textContent = stripPath(it.name || DEFAULT_NAME());
   $("rmBody").innerHTML = renderMd(it.result.markdown);

@@ -171,6 +171,7 @@ async def security_headers(request: Request, call_next):
         "script-src 'self' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
+        "media-src 'self' blob:; "   # reproductor de audio (MP3 generado, blob:)
         "font-src 'self' data: https://cdn.jsdelivr.net; "
         "connect-src 'self'; object-src 'none'; base-uri 'none'; "
         "frame-ancestors 'none'; frame-src 'none'; form-action 'self'"

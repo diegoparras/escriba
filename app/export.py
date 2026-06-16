@@ -58,7 +58,9 @@ _BY_ID = {f[0]: f for f in _FORMATS}
 _DATA_FORMATS = [
     ("json", "json", "application/json; charset=utf-8", "JSON"),
     ("yaml", "yaml", "application/yaml; charset=utf-8", "YAML"),
-    ("toml", "toml", "application/toml; charset=utf-8", "TOML"),
+    # TOON (Token-Oriented Object Notation): formato compacto, eficiente en tokens
+    # para alimentar datos a un LLM. https://github.com/toon-format/toon
+    ("toon", "toon", "text/plain; charset=utf-8", "TOON"),
 ]
 _DATA_BY_ID = {f[0]: f for f in _DATA_FORMATS}
 
@@ -120,13 +122,84 @@ def _serialize_data(fmt_id: str, data: dict) -> bytes:
         except ImportError as e:
             raise ExportError("El soporte YAML no está instalado en el servidor.") from e
         return yaml.safe_dump(data, allow_unicode=True, sort_keys=False).encode("utf-8")
-    if fmt_id == "toml":
-        try:
-            import tomli_w
-        except ImportError as e:
-            raise ExportError("El soporte TOML no está instalado en el servidor.") from e
-        return tomli_w.dumps(data).encode("utf-8")
+    if fmt_id == "toon":
+        return _toon_encode(data).encode("utf-8")
     raise ExportError("Formato de datos no soportado.")
+
+
+# --- Encoder TOON (Token-Oriented Object Notation) --------------------------
+# Implementación propia (el port Python oficial aún no trae encoder). Cubre lo que
+# generamos: escalares, objetos anidados, arrays de primitivos y arrays TABULARES
+# de objetos uniformes (key[N]{campos}: + filas). Indentación de 2 espacios.
+def _toon_looks_number(s: str) -> bool:
+    try:
+        float(s)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _toon_str(s: str) -> str:
+    need = (s == "" or s != s.strip()
+            or any(c in s for c in ',:{}[]"\n\t')
+            or s in ("true", "false", "null") or _toon_looks_number(s))
+    if not need:
+        return s
+    esc = (s.replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\t", "\\t").replace("\r", ""))
+    return '"' + esc + '"'
+
+
+def _toon_scalar(v) -> str:
+    if v is True:
+        return "true"
+    if v is False:
+        return "false"
+    if v is None:
+        return "null"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return repr(v)
+    return _toon_str(str(v))
+
+
+def _toon_kv(k, v, indent, out):
+    pad = "  " * indent
+    if isinstance(v, dict):
+        out.append(f"{pad}{k}:")
+        for kk, vv in v.items():
+            _toon_kv(kk, vv, indent + 1, out)
+    elif isinstance(v, list):
+        n = len(v)
+        flat_objs = (n > 0 and all(isinstance(e, dict) for e in v)
+                     and all(list(e.keys()) == list(v[0].keys()) for e in v)
+                     and all(not isinstance(x, (dict, list)) for e in v for x in e.values()))
+        if flat_objs:
+            cols = list(v[0].keys())
+            out.append(f"{pad}{k}[{n}]{{{','.join(cols)}}}:")
+            for e in v:
+                out.append("  " * (indent + 1) + ",".join(_toon_scalar(e[c]) for c in cols))
+        elif all(not isinstance(e, (dict, list)) for e in v):
+            out.append(f"{pad}{k}[{n}]: " + ",".join(_toon_scalar(e) for e in v))
+        else:
+            out.append(f"{pad}{k}[{n}]:")
+            for e in v:
+                if isinstance(e, dict):
+                    out.append("  " * (indent + 1) + "-")
+                    for kk, vv in e.items():
+                        _toon_kv(kk, vv, indent + 2, out)
+                else:
+                    out.append("  " * (indent + 1) + _toon_scalar(e))
+    else:
+        out.append(f"{pad}{k}: {_toon_scalar(v)}")
+
+
+def _toon_encode(data: dict) -> str:
+    out = []
+    for k, v in data.items():
+        _toon_kv(k, v, 0, out)
+    return "\n".join(out) + "\n"
 
 
 def convert(markdown: str, fmt_id: str, title: str | None = None):
@@ -138,7 +211,10 @@ def convert(markdown: str, fmt_id: str, title: str | None = None):
     # Formatos de datos (JSON/YAML/TOML): el documento como estructura, sin Pandoc.
     if fmt_id in _DATA_BY_ID:
         d = _DATA_BY_ID[fmt_id]
-        data = _serialize_data(fmt_id, _doc_to_struct(markdown, title))
+        struct = _doc_to_struct(markdown, title)
+        if fmt_id == "toon":
+            struct.pop("markdown", None)  # TOON: estructura compacta (las secciones ya traen el texto)
+        data = _serialize_data(fmt_id, struct)
         if not data:
             raise ExportError("La exportación quedó vacía.")
         return data, d[1], d[2]

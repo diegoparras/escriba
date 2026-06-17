@@ -70,7 +70,7 @@ def available() -> bool:
 
 
 def catalog():
-    # Los de Pandoc requieren Pandoc; los de datos (JSON/YAML/TOML) siempre están.
+    # Los de Pandoc requieren Pandoc; los de datos (JSON/YAML/TOON) siempre están.
     pandoc = [{"id": f[0], "ext": f[2], "label": f[5]} for f in _FORMATS] if available() else []
     data = [{"id": f[0], "ext": f[1], "label": f[3]} for f in _DATA_FORMATS]
     return pandoc + data
@@ -78,7 +78,7 @@ def catalog():
 
 def _doc_to_struct(markdown: str, title: str | None = None) -> dict:
     """Parte el Markdown en una estructura serializable (título + secciones por
-    encabezados + markdown completo + metadatos). Sin valores None (TOML-safe)."""
+    encabezados + markdown completo + metadatos). Sin valores None."""
     md = markdown or ""
     doc_title = (title or "").strip()
     sections = []
@@ -208,7 +208,7 @@ def convert(markdown: str, fmt_id: str, title: str | None = None):
     ``title`` setea el metadata 'title' del documento; si es None/vacío se usa
     "Documento" (mismo comportamiento histórico).
     """
-    # Formatos de datos (JSON/YAML/TOML): el documento como estructura, sin Pandoc.
+    # Formatos de datos (JSON/YAML/TOON): el documento como estructura, sin Pandoc.
     if fmt_id in _DATA_BY_ID:
         d = _DATA_BY_ID[fmt_id]
         struct = _doc_to_struct(markdown, title)

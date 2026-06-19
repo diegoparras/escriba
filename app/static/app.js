@@ -111,6 +111,28 @@ function onAuthed(caps) {
   loadFormats();
   loadModelPrices();
   startStats();
+  consumeEcosystemHandoff();
+}
+
+// Puente del ecosistema: si un satélite (Extracta, etc., mismo origen) dejó un documento en
+// sessionStorage, lo cargo como un ítem YA convertido (Markdown) listo para anonimizar /
+// convertir / chunk / exportar / audio. El documento nunca viajó por la red: es local.
+function consumeEcosystemHandoff() {
+  let raw; try { raw = sessionStorage.getItem("escriba.handoff"); } catch { return; }
+  if (!raw) return;
+  try { sessionStorage.removeItem("escriba.handoff"); } catch {}   // consumir una sola vez
+  let p; try { p = JSON.parse(raw); } catch { return; }
+  if (!p || typeof p.content !== "string" || !p.content.trim()) return;
+  const md = p.content;
+  const words = (md.match(/\S+/g) || []).length;
+  const title = (p.title || "Documento").toString().slice(0, 120);
+  const name = /\.\w+$/.test(title) ? title : title + ".md";
+  items.set(++seq, {
+    id: seq, name, size: md.length, status: "done", progress: 100, selected: true,
+    result: { markdown: md, source: (p.source || title).toString(), title, chars: md.length, words, elapsed_ms: 0 },
+  });
+  render();
+  toast((p.from === "extracta" ? "Extracta · " : "") + title, "ok");
 }
 function applyLimits() {
   if (!CAPS) return;

@@ -891,27 +891,162 @@ function closeModal(id) {
     if (st.prevFocus && typeof st.prevFocus.focus === "function") st.prevFocus.focus();
   }
 }
-// ---------- Editor de Markdown a pantalla completa ----------
+// ---------- Editor unificado: Markdown · JSON · Tabla ----------
 let _mdeItem = null, _mdeTimer = null;
-function _mdePreviewUpdate() {
-  const p = $("mdePreview"); if (p) p.innerHTML = renderMd($("mdeText").value);
-  const info = $("mdeInfo"); if (info) { const s = $("mdeText").value; info.textContent = t("edit.count", { c: s.length }); }
+const MDE = { tab: "md", preview: true, tableArr: [], cols: [] };
+
+function _mdeAsTableArray(d) {
+  return (Array.isArray(d) && d.length && d.every(x => x && typeof x === "object" && !Array.isArray(x))) ? d : null;
 }
+function _mdeColsOf(arr) {
+  const cols = [], seen = new Set();
+  arr.forEach(r => Object.keys(r).forEach(k => { if (!seen.has(k)) { seen.add(k); cols.push(k); } }));
+  return cols;
+}
+function _mdeCoerce(v) {
+  const s = String(v).trim();
+  if (s === "") return "";
+  if (s === "true") return true; if (s === "false") return false; if (s === "null") return null;
+  if (/^-?\d+(\.\d+)?$/.test(s) && s.length < 16) return Number(s);
+  return v;
+}
+// Markdown table ↔ filas de objetos.
+function _mdeTableToRows(md) {
+  const lines = (md || "").split("\n");
+  let i = -1;
+  for (let k = 0; k < lines.length - 1; k++) {
+    if (/^\s*\|.*\|\s*$/.test(lines[k]) && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[k + 1])) { i = k; break; }
+  }
+  if (i < 0) return [];
+  const head = lines[i].trim().replace(/^\||\|$/g, "").split("|").map(s => s.trim());
+  const rows = [];
+  for (let j = i + 2; j < lines.length; j++) {
+    if (!/^\s*\|.*\|\s*$/.test(lines[j])) break;
+    const cells = lines[j].trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).map(s => s.trim().replace(/\\\|/g, "|"));
+    const obj = {}; head.forEach((h, k) => obj[h || ("col" + (k + 1))] = cells[k] !== undefined ? cells[k] : "");
+    rows.push(obj);
+  }
+  return rows;
+}
+function _mdeRowsToMdTable(rows) {
+  if (!rows || !rows.length) return "";
+  const cols = _mdeColsOf(rows);
+  const esc = v => String(v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : v)).replace(/\|/g, "\\|").replace(/\n/g, " ");
+  let out = "| " + cols.join(" | ") + " |\n| " + cols.map(() => "---").join(" | ") + " |\n";
+  rows.forEach(r => { out += "| " + cols.map(c => esc(r[c])).join(" | ") + " |\n"; });
+  return out;
+}
+function _mdeSetErr(m) { const e = $("mdeErr"); if (e) e.textContent = m || ""; }
+function _mdeRenderTable() {
+  const wrap = $("mdeTable"), arr = MDE.tableArr || [];
+  MDE.cols = arr.length ? _mdeColsOf(arr) : [];
+  if (!arr.length || !MDE.cols.length) { wrap.innerHTML = `<div class="mde-empty">${escapeHtml(t("edit.notTabular"))}</div>`; return; }
+  let h = `<table class="mde-table"><thead><tr>` + MDE.cols.map(c => `<th>${escapeHtml(c)}</th>`).join("") + `</tr></thead><tbody>`;
+  arr.forEach((row, ri) => {
+    h += `<tr>` + MDE.cols.map(c => {
+      const v = row[c]; const disp = v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+      return `<td><div class="cell" contenteditable="true" data-r="${ri}" data-c="${escapeHtml(c)}">${escapeHtml(disp)}</div></td>`;
+    }).join("") + `</tr>`;
+  });
+  wrap.innerHTML = h + `</tbody></table>`;
+  wrap.querySelectorAll(".cell").forEach(cell =>
+    cell.addEventListener("input", () => { MDE.tableArr[+cell.dataset.r][cell.dataset.c] = _mdeCoerce(cell.textContent); }));
+}
+function _mdeSyncFromJson() {
+  try { const a = _mdeAsTableArray(JSON.parse($("mdeJson").value || "null")); MDE.tableArr = a ? a.map(o => ({ ...o })) : []; _mdeSetErr(""); return true; }
+  catch (e) { _mdeSetErr("JSON: " + e.message); return false; }
+}
+function _mdeSyncToJson() { $("mdeJson").value = MDE.tableArr.length ? JSON.stringify(MDE.tableArr, null, 2) : ""; }
+function _mdePreviewUpdate() { const p = $("mdePreview"); if (p) p.innerHTML = renderMd($("mdeText").value); }
+function _mdeUpdateInfo() {
+  const info = $("mdeInfo"); if (!info) return;
+  if (MDE.tab === "md") info.textContent = t("edit.count", { c: $("mdeText").value.length });
+  else if (MDE.tab === "json") info.textContent = t("edit.count", { c: $("mdeJson").value.length });
+  else info.textContent = (MDE.tableArr || []).length + " × " + MDE.cols.length;
+}
+function _mdeSwitch(tab) {
+  if (MDE.tab === "json" && tab === "table") { if (!_mdeSyncFromJson()) return; _mdeRenderTable(); }
+  if (MDE.tab === "table" && tab === "json") _mdeSyncToJson();
+  MDE.tab = tab;
+  $("mdeBody").dataset.tab = tab;
+  $("mdeBody").classList.toggle("split", tab === "md" && MDE.preview);
+  document.querySelectorAll("#mdeTabs .mde-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  $("mdeToolbar").style.display = tab === "md" ? "" : "none";
+  $("mdeInsert").classList.toggle("hidden", tab === "md");
+  _mdeUpdateInfo();
+}
+function _mdeWrap(before, after) {
+  const ta = $("mdeText"), s = ta.selectionStart, e = ta.selectionEnd, v = ta.value, sel = v.slice(s, e) || "texto";
+  ta.value = v.slice(0, s) + before + sel + after + v.slice(e);
+  ta.focus(); ta.selectionStart = s + before.length; ta.selectionEnd = s + before.length + sel.length;
+  _mdePreviewUpdate(); _mdeUpdateInfo();
+}
+function _mdePrefix(prefix) {
+  const ta = $("mdeText"), s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+  const ls = v.lastIndexOf("\n", s - 1) + 1; let le = v.indexOf("\n", e); if (le === -1) le = v.length;
+  const num = prefix === "1. ";
+  const out = v.slice(ls, le).split("\n").map((ln, i) => (num ? (i + 1) + ". " : prefix) + ln).join("\n");
+  ta.value = v.slice(0, ls) + out + v.slice(le);
+  ta.focus(); ta.selectionStart = ls; ta.selectionEnd = ls + out.length;
+  _mdePreviewUpdate(); _mdeUpdateInfo();
+}
+const _MDE_ACTS = {
+  bold: () => _mdeWrap("**", "**"), italic: () => _mdeWrap("*", "*"), strike: () => _mdeWrap("~~", "~~"),
+  h1: () => _mdePrefix("# "), h2: () => _mdePrefix("## "), h3: () => _mdePrefix("### "),
+  ul: () => _mdePrefix("- "), ol: () => _mdePrefix("1. "), quote: () => _mdePrefix("> "),
+  code: () => _mdeWrap("`", "`"), link: () => _mdeWrap("[", "](https://)"),
+  table: () => { const ta = $("mdeText"), p = ta.selectionStart, tbl = "\n| A | B |\n| --- | --- |\n| 1 | 2 |\n"; ta.value = ta.value.slice(0, p) + tbl + ta.value.slice(p); _mdePreviewUpdate(); _mdeUpdateInfo(); } };
+
+// Bindings de una sola vez (referencian el estado MDE / _mdeItem actuales).
+document.querySelectorAll("#mdeToolbar .mde-tool").forEach(b => b.addEventListener("click", () => { const f = _MDE_ACTS[b.dataset.md]; if (f) f(); }));
+document.querySelectorAll("#mdeTabs .mde-tab").forEach(b => b.addEventListener("click", () => _mdeSwitch(b.dataset.tab)));
+$("mdeText").addEventListener("input", () => { _mdeUpdateInfo(); clearTimeout(_mdeTimer); _mdeTimer = setTimeout(_mdePreviewUpdate, 200); });
+$("mdeJson").addEventListener("input", () => { _mdeUpdateInfo(); _mdeSetErr(""); });
+$("mdePrevToggle").addEventListener("click", () => {
+  MDE.preview = !MDE.preview;
+  $("mdePrevToggle").classList.toggle("on", MDE.preview);
+  $("mdeBody").classList.toggle("split", MDE.tab === "md" && MDE.preview);
+});
+$("mdeInsert").addEventListener("click", () => {
+  if (MDE.tab === "table") _mdeSyncToJson();
+  if (!_mdeSyncFromJson()) { _mdeSwitch("json"); return; }
+  const tbl = _mdeRowsToMdTable(MDE.tableArr);
+  if (!tbl) return;
+  const ta = $("mdeText"); ta.value = (ta.value.replace(/\s*$/, "") + "\n\n" + tbl).replace(/^\n+/, "");
+  _mdeSwitch("md"); _mdePreviewUpdate(); _mdeUpdateInfo();
+  toast(t("edit.saved"), "ok");
+});
+$("mdeDl").addEventListener("click", () => {
+  const name = (_mdeItem ? baseName(_mdeItem.name) : "escriba");
+  let content, mime, ext;
+  if (MDE.tab === "json") { content = $("mdeJson").value; mime = "application/json"; ext = "json"; }
+  else if (MDE.tab === "table") {
+    const esc = v => `"${String(v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : v)).replace(/"/g, '""')}"`;
+    content = MDE.tableArr.length ? [MDE.cols.join(",")].concat(MDE.tableArr.map(r => MDE.cols.map(c => esc(r[c])).join(","))).join("\n") : "";
+    mime = "text/csv"; ext = "csv";
+  } else { content = $("mdeText").value; mime = "text/markdown"; ext = "md"; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.download = name + "." + ext; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+});
+
 function openMdEditor(it) {
   _mdeItem = it;
-  const ta = $("mdeText");
-  ta.value = it.result.markdown || "";
-  _mdePreviewUpdate();
-  ta.oninput = () => { clearTimeout(_mdeTimer); _mdeTimer = setTimeout(_mdePreviewUpdate, 200); };
+  $("mdeText").value = it.result.markdown || "";
+  MDE.tableArr = _mdeTableToRows(it.result.markdown).map(o => ({ ...o }));
+  $("mdeJson").value = MDE.tableArr.length ? JSON.stringify(MDE.tableArr, null, 2) : "";
+  _mdeRenderTable();
+  MDE.preview = true; $("mdePrevToggle").classList.add("on");
+  _mdeSetErr(""); _mdePreviewUpdate();
   $("mdeSave").onclick = () => {
-    it.result.markdown = ta.value;
+    it.result.markdown = $("mdeText").value;
     const root = document.getElementById("it" + it.id);
-    if (root) wireResult(root, it);   // reconstruye preview/raw/panel con lo editado
+    if (root) wireResult(root, it);
     closeModal("mdEditorModal");
     toast(t("edit.saved"), "ok");
   };
   openModal("mdEditorModal");
-  setTimeout(() => { try { ta.focus(); } catch {} }, 50);
+  _mdeSwitch("md");
+  setTimeout(() => { try { $("mdeText").focus(); } catch {} }, 50);
 }
 
 function openResultModal(it) {

@@ -5,7 +5,7 @@ Método principal: yt-dlp (robusto, se actualiza rápido ante los cambios de You
 Fallback: youtube-transcript-api.
 
 Si el servidor está en una IP bloqueada por YouTube, configurá:
-  - YT_PROXY    (ej: http://user:pass@host:port)  → enruta los pedidos
+  - YT_PROXY    (ej: http://host:puerto — admite usuario y clave si el proxy lo pide) → enruta los pedidos
   - YT_COOKIES  (ruta a un cookies.txt de una sesión logueada de YouTube)
 """
 

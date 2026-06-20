@@ -30,6 +30,9 @@ from . import detectors
 log = logging.getLogger("markitdown.anonimal")
 
 ANONIMAL_URL = (os.getenv("ANONIMAL_URL", "") or "").rstrip("/")
+# Token de servicio de Anonimal: si el servicio tiene ANONIMAL_TOKEN seteado
+# (instancia con login que también atiende apps), se manda en cada request.
+ANONIMAL_TOKEN = os.getenv("ANONIMAL_TOKEN", "")
 # NOTA: el texto es "ANOM_DATA" (con M), no "ANON_DATA". Es INTENCIONAL: este
 # literal es contrato estable con la UI (index.html) y las claves anon.anon de
 # i18n.js en los 7 idiomas. Renombrarlo rompería compatibilidad, así que se
@@ -81,7 +84,8 @@ def _detect(text: str) -> dict:
     if not ANONIMAL_URL:
         raise AnonimalError("La anonimización no está configurada (ANONIMAL_URL vacío).")
     try:
-        r = requests.post(f"{ANONIMAL_URL}/anonymize", json={"text": text}, timeout=_TIMEOUT)
+        headers = {"X-Anonimal-Token": ANONIMAL_TOKEN} if ANONIMAL_TOKEN else {}
+        r = requests.post(f"{ANONIMAL_URL}/anonymize", json={"text": text}, timeout=_TIMEOUT, headers=headers)
     except requests.RequestException as e:
         # No exponer internals de red (host/puerto/timeout) al cliente: logueamos
         # el detalle con un err_id y devolvemos un mensaje genérico correlacionable.

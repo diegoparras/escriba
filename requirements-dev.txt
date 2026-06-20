@@ -1,0 +1,6 @@
+# Auditoría de SEGURIDAD pre-deploy de Escriba (regla pre-deploy del ecosistema).
+# Nota: el gate de calidad completo (ruff/vulture/mypy) y una suite de tests son
+# una iniciativa APARTE — Escriba todavía no tiene tests y nunca pasó linters.
+bandit[toml]>=1.9,<2.0     # SAST (gateado a Medium+; los Low de subprocess son inherentes)
+pip-audit>=2.10,<3.0       # vulnerabilidades conocidas en dependencias (OSV/CVE)
+detect-secrets>=1.5,<2.0   # que no se filtre ningún secreto al repo

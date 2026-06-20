@@ -1,0 +1,7 @@
+# Config de herramientas (solo tooling; Escriba no se empaqueta, corre por uvicorn).
+
+[tool.bandit]
+# Escriba ORQUESTA conversores (Pandoc/ffmpeg/Piper), así que los Low de
+# subprocess (B603/B607/B404) y algún try/except son inherentes y aceptados. El
+# gate falla solo con severidad Medium/High (se corre con `bandit -ll`).
+exclude_dirs = ["tests", ".venv"]

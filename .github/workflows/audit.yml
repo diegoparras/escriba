@@ -1,0 +1,38 @@
+name: audit
+
+# Gate de SEGURIDAD pre-deploy (regla del ecosistema). El gate de calidad
+# completo (ruff/vulture/mypy) y la suite de tests son una iniciativa aparte:
+# Escriba todavía no tiene tests y arrastra deuda de lint.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  seguridad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar herramientas de auditoría
+        run: pip install -r requirements-dev.txt
+
+      - name: Bandit (SAST, severidad Medium/High)
+        run: bandit -c pyproject.toml -r app -ll -q
+
+      - name: pip-audit (vulnerabilidades en dependencias)
+        run: pip-audit -r requirements.txt
+
+      - name: detect-secrets (no filtrar secretos)
+        run: detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
+
+      - name: Trivy (vulns + secrets del repo)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true

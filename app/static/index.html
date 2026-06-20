@@ -101,6 +101,8 @@
   .sub { color: var(--muted); font-size: clamp(17px,2.2vw,21px); max-width: 640px; margin: 0 auto; line-height: 1.4; font-weight: 400; }
 
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow); }
+  /* Card de "reglas avanzadas": tinte sutil del accent para separarla visualmente del resto del panel sin gritar. */
+  .rules-card { background: color-mix(in srgb, var(--accent) 4%, var(--bg-2)); border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border)); border-radius: 13px; padding: 14px 15px; }
 
   /* --- Drop zone estilo Apple --- */
   .drop { position: relative; border: 1.5px dashed var(--hairline); border-radius: var(--radius); padding: 60px 28px 52px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; background: transparent; }
@@ -744,16 +746,11 @@
 
     <div class="stab-panel hidden" data-stab-panel="anon">
       <div class="field hidden" id="anonField">
-        <label for="anonMode" data-i18n="anon.label">Anonimizar datos personales (PII)</label>
+        <!-- Control de anonimización compartido del ecosistema (AnonOptions): es el
+             ÚNICO selector de modo y trae su propio label + indicador básico/completo.
+             La conversión lee el modo con getAnonMode() (no hay <select> duplicado). -->
+        <div id="anonOptionsMount"></div>
         <div class="row">
-          <select id="anonMode">
-            <option value="off" data-i18n="anon.off">No anonimizar</option>
-            <option value="seudo" data-i18n="anon.seudo">Seudonimizar para LLMs («PERSONA_1» + restaurable)</option>
-            <option value="mask" data-i18n="anon.mask">Enmascarado parcial (••••3456 — conserva el final)</option>
-            <option value="hash" data-i18n="anon.hash">Hash estable (mismo dato → mismo seudónimo)</option>
-            <option value="typed" data-i18n="anon.typed">Tipado (&lt;PRIVATE_PERSON&gt;, &lt;ACCOUNT_NUMBER&gt;…)</option>
-            <option value="anon" data-i18n="anon.anon">Anónimo (todo como &lt;&lt;ANOM_DATA&gt;&gt;)</option>
-          </select>
           <select id="anonStrict" class="hidden" style="white-space:nowrap">
             <option value="balanceado" data-i18n="anon.balanced">Balanceado</option>
             <option value="estricto" data-i18n="anon.strict">Estricto (tapa de más)</option>
@@ -766,12 +763,13 @@
         <p class="adv-note" style="margin:2px 0 8px" data-i18n="det.help">Activá o desactivá cada detector según tu caso (algunos pueden dar falsos positivos). Se guarda en este navegador.</p>
         <div id="detectorsBox"></div>
       </div>
-      <div class="field" style="margin-top:18px">
+      <div class="field rules-card" style="margin-top:18px">
         <label for="anonRules" data-i18n="rules.label">Reglas de anonimización propias (avanzado)</label>
         <p class="adv-note" style="margin:2px 0 6px" data-i18n-html="rules.help">Definí tus propios patrones (legajos, números de socio, formatos internos) en un JSON. Motor <b>RE2</b> seguro. Se guarda solo en este navegador y aplica al anonimizar.</p>
         <p style="margin:0 0 8px"><a class="link-btn" id="rulesTemplateLink" href="/static/anon-rules-template.json" download="anon-rules-template.json" data-i18n="rules.template">Descargar plantilla</a></p>
         <textarea id="anonRules" rows="5" spellcheck="false" autocomplete="off" placeholder='{ "patterns": [ { "regex": "LEG-\\d{6}", "placeholder": "ID" } ] }' style="width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <!-- Acciones de reglas: aparecen SOLO cuando hay algo escrito (evita el "Guardar/Borrar" confuso sobre un campo vacío). -->
+        <div id="rulesActions" class="hidden" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           <button id="validateRulesBtn" class="btn info sm" type="button" data-i18n="rules.validate">✓ Validar</button>
           <button id="saveRulesBtn" class="btn ok sm" type="button" data-i18n="rules.save">Guardar</button>
           <button id="clearRulesBtn" class="btn danger sm" type="button" data-i18n="rules.clear">Borrar</button>
@@ -1042,6 +1040,7 @@
 
 <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="true"></div>
 <script src="/static/i18n.js?v=__VER__"></script>
+<script src="/vendor/anon-options.js?v=__VER__"></script>
 <script src="/static/app.js?v=__VER__"></script>
 </body>
 </html>

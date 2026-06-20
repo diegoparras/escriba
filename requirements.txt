@@ -52,3 +52,8 @@ opendataloader-pdf>=0.4
 # Exportación del documento a formatos de DATOS (además de Pandoc): JSON (stdlib),
 # YAML (PyYAML) y TOON (encoder propio en export.py, sin dependencia). PyYAML es liviano.
 PyYAML>=6.0,<7.0
+
+# Motor de anonimización liviano del ecosistema (regex, stdlib): fallback
+# standalone cuando NO hay ANONIMAL_URL, y fuente del componente JS compartido.
+# OJO: pineado al tag que incluye AnonOptions.showRules (cortar v0.4.1 en Anonimal).
+anonimal-lite @ git+https://github.com/diegoparras/anonimal.git@v0.4.1

@@ -40,7 +40,7 @@ WORKDIR /app
 
 # Instalación de dependencias Python (build-essential temporal para wheels).
 COPY requirements.txt .
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git \
  && pip install --no-cache-dir -r requirements.txt \
  # markitdown[all] fija youtube-transcript-api~=1.0.0 (con bug); forzamos una versión nueva
  # que sí funciona. Usamos nuestro propio handler de YouTube, no el de markitdown.
@@ -48,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
  # yt-dlp a la ÚLTIMA versión SIEMPRE: YouTube cambia muy seguido y un yt-dlp
  # viejo deja de bajar subtítulos. Esta capa se invalida en cada rebuild.
  && pip install --no-cache-dir -U yt-dlp \
- && apt-get purge -y build-essential && apt-get autoremove -y \
+ && apt-get purge -y build-essential git && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
 
 # Pre-descarga del modelo Whisper "base" en una capa ESTABLE (solo depende de

@@ -133,8 +133,9 @@ _CAPS_STATIC: dict = {}
 def _compute_caps_static() -> dict:
     has_export = export_mod.available()
     return {
-        "anonimal": anonimal_mod.available(),
-        "detectors": detectors_mod.catalog() if anonimal_mod.available() else None,
+        "anonimal": anonimal_mod.available(),            # siempre True (servicio o lite)
+        "anonimalFull": anonimal_mod.service_available(),  # motor ML completo (servicio)
+        "detectors": detectors_mod.catalog() if anonimal_mod.service_available() else None,
         "export": export_mod.catalog() if has_export else [],
         "advancedExtract": odl_mod.available(),
         "tts_piper": tts_mod.piper_available(),
@@ -452,6 +453,7 @@ def _caps_payload(role: str) -> dict:
     # cálculo perezoso si por algún motivo el lifespan aún no corrió, p.ej. tests).
     caps_static = _CAPS_STATIC or _compute_caps_static()
     d["anonimal"] = caps_static["anonimal"]   # ¿está habilitada la anonimización de PII?
+    d["anonimalFull"] = caps_static.get("anonimalFull", False)   # motor ML completo (servicio)
     if d["anonimal"] and caps_static["detectors"] is not None:
         d["detectors"] = caps_static["detectors"]   # catálogo para los checkboxes de la UI
     d["export"] = caps_static["export"]   # formatos de salida (Pandoc)
@@ -982,7 +984,7 @@ async def convert(
                    "error", anon_mode=anon_mode, pii_count=pii_count)
             raise HTTPException(
                 status_code=503,
-                detail=f"El servicio de anonimización no está disponible ahora (ref {err_id}).")
+                detail=f"El anonimizador se está iniciando. Probá de nuevo en unos segundos (ref {err_id}).")
         # Scrub de metadata: el título y el source (basename/URL) pueden contener
         # un nombre u otro PII. En vez de descartarlos, los pasamos por el MISMO
         # modo de anonimización para conservar lo legítimo y enmascarar lo sensible.
@@ -1372,6 +1374,16 @@ _INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace("_
 @app.get("/", response_class=HTMLResponse)
 def index():
     return _INDEX_HTML
+
+
+@app.get("/vendor/anon-options.js", include_in_schema=False)
+def _anon_options_js():
+    """Sirve el componente de opciones de anonimización compartido del ecosistema,
+    empaquetado dentro de `anonimal_lite` (fuente única)."""
+    from fastapi.responses import FileResponse
+
+    from anonimal_lite import ui_path
+    return FileResponse(ui_path(), media_type="application/javascript")
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

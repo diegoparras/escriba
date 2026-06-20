@@ -59,6 +59,12 @@ class AnonimalError(Exception):
 
 
 def available() -> bool:
+    """Anonimización SIEMPRE disponible: servicio ML (ANONIMAL_URL) o fallback lite."""
+    return True
+
+
+def service_available() -> bool:
+    """¿Está configurado el servicio Anonimal (motor ML completo)?"""
     return bool(ANONIMAL_URL)
 
 
@@ -310,9 +316,18 @@ def detect_spans(text, strict=False, known_pii=None, rules=None, detector_ids=No
     """Detecta PII y devuelve los spans FUSIONADOS sobre `text` tal cual
     (los offsets valen sobre el texto recibido; acá NO se normaliza).
     Lo usa anonymize() y también la redacción visual (redact.py)."""
-    data = _detect(text)
-    spans = _collect(text, data.get("detected_spans") or [])     # OPF (NER)
-    spans += detectors.run(text, detector_ids, strict)           # detectores built-in
+    if not ANONIMAL_URL:
+        # Fallback standalone (sin servicio): la DETECCIÓN base sale del motor lite
+        # (regex) de anonimal_lite, en formato Escriba (start/end/placeholder). El
+        # resto del pipeline (reglas/known_pii/propagación/whitelist/modos) es el
+        # MISMO que con el servicio → básico y completo solo difieren en la fuente.
+        from anonimal_lite import LiteEngine, placeholder_of
+        spans = [{"start": s.start, "end": s.end, "placeholder": placeholder_of(s.label)}
+                 for s in LiteEngine().detect(text)]
+    else:
+        data = _detect(text)
+        spans = _collect(text, data.get("detected_spans") or [])     # OPF (NER)
+        spans += detectors.run(text, detector_ids, strict)           # detectores built-in
     spans += _known_spans(text, known_pii)    # campos del comprobante (layout)
     spans += anon_rules.custom_spans(text, rules)   # reglas del usuario (RE2)
     spans += _propagate(text, spans)          # mismo dato PII → tapado en todo el doc

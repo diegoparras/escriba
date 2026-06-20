@@ -84,6 +84,39 @@ async function doLogin() {
   } catch (e) { toast(e.message, "err"); }
   finally { $("loginBtn").disabled = false; }
 }
+// El componente compartido AnonOptions es el ÚNICO control de modo (no hay más un
+// <select id="anonMode"> oculto: eso causaba un duplicado visible). La conversión
+// lee el modo con getAnonMode(). El valor canónico «pseudo» del componente se mapea
+// al «seudo» histórico de Escriba; el modo elegido se recuerda en localStorage.
+const ANON_MODE_STORE = "mid_anon_mode";
+function getAnonMode() {
+  const mount = document.getElementById("anonOptionsMount");
+  const v = (window.AnonOptions && mount) ? AnonOptions.getValues(mount) : null;
+  if (!v) return "off";
+  return v.mode === "pseudo" ? "seudo" : v.mode;
+}
+// El "estricto" es un extra del motor completo (Anonimal) y solo si hay modo activo.
+function gateAnonStrict() {
+  const show = !!(CAPS && CAPS.anonimalFull) && getAnonMode() !== "off";
+  document.getElementById("anonStrict")?.classList.toggle("hidden", !show);
+}
+function mountAnonOptions(caps) {
+  const mount = document.getElementById("anonOptionsMount");
+  if (!mount || !window.AnonOptions) return;
+  let saved = "off"; try { saved = localStorage.getItem(ANON_MODE_STORE) || "off"; } catch {}
+  AnonOptions.mount(mount, {
+    lang: document.documentElement.lang || "es",
+    hasService: !!caps.anonimalFull,
+    mode: saved === "seudo" ? "pseudo" : saved,
+    showRules: false,   // Escriba conserva su UI de reglas (RE2, validar, plantilla)
+    onChange: () => {
+      try { localStorage.setItem(ANON_MODE_STORE, getAnonMode()); } catch { /* sin storage */ }
+      gateAnonStrict();
+    },
+  });
+  gateAnonStrict();   // visibilidad inicial del "estricto"
+}
+
 function onAuthed(caps) {
   CAPS = caps;
   $("overlay").classList.add("hidden");
@@ -100,6 +133,8 @@ function onAuthed(caps) {
   $("advField").classList.toggle("hidden", !caps.advancedExtract);
   $("anonField").classList.toggle("hidden", !caps.anonimal);   // anonimización si el server la habilita
   if (caps.anonimal && caps.detectors) renderDetectors(caps.detectors);
+  mountAnonOptions(caps);   // núcleo compartido (modo + indicador básico/completo)
+  $("detectorsField")?.classList.toggle("hidden", !caps.anonimalFull);   // detectores: extra del modo completo
   $("stats").classList.toggle("hidden", caps.stats === "none");
   // Versión real (la informa el servidor desde el tag de git).
   if (caps.version) $("aboutVer").textContent = caps.version.startsWith("v") ? caps.version : "v" + caps.version;
@@ -1072,6 +1107,9 @@ function openResultModal(it) {
 }
 document.querySelectorAll(".modal-backdrop").forEach(bd => {
   bd.addEventListener("click", (e) => {
+    // Si hay un desplegable custom abierto, un clic en el FONDO lo cierra a ÉL, no al
+    // modal (UX esperada: primero descartás el dropdown, el modal sigue abierto).
+    if (e.target === bd && document.querySelector(".es-wrap.open")) { esCloseAll(); return; }
     // Cierra SOLO si: clic en el fondo, en la ✕, o en un control con [data-close]
     // que NO sea el propio backdrop (el backdrop también lleva data-close, y un
     // closest() ingenuo lo encontraría en CUALQUIER clic interno → cerraba siempre).
@@ -1082,7 +1120,10 @@ document.querySelectorAll(".modal-backdrop").forEach(bd => {
   });
 });
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") document.querySelectorAll(".modal-backdrop:not(.hidden)").forEach(m => {
+  if (e.key !== "Escape") return;
+  // Si hay un desplegable abierto, Esc lo cierra a ÉL primero (no al modal).
+  if (document.querySelector(".es-wrap.open")) { esCloseAll(); return; }
+  document.querySelectorAll(".modal-backdrop:not(.hidden)").forEach(m => {
     if (m.id) closeModal(m.id); else m.classList.add("hidden");
   });
 });
@@ -1172,7 +1213,7 @@ function esEnhance(sel) {
     else if (e.key === "Home") { e.preventDefault(); setActive(0); }
     else if (e.key === "End") { e.preventDefault(); setActive(rows.length - 1); }
     else if (e.key === "Enter") { e.preventDefault(); if (rows[active]) rows[active].click(); }
-    else if (e.key === "Escape") { e.preventDefault(); close(); trigger.focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); trigger.focus(); }   // no dejar que Esc cierre también el modal
     else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { typeAhead(e.key); }
   }
   const render = () => {
@@ -1209,9 +1250,34 @@ function esEnhance(sel) {
     }
     renderRows(opts, "");
   };
+  // Posiciona el popup como position:fixed anclado al trigger, para que NO lo recorte
+  // el overflow de un contenedor (p.ej. el modal de Configuración). Hace flip hacia
+  // arriba si abajo no entra, y limita su alto al espacio disponible (la lista scrollea).
+  const placePop = () => {
+    const r = trigger.getBoundingClientRect();
+    const gap = 6, margin = 10;
+    pop.style.position = "fixed"; pop.style.right = "auto";
+    pop.style.left = Math.round(r.left) + "px";
+    pop.style.width = Math.round(r.width) + "px";
+    pop.style.top = "-9999px"; pop.style.maxHeight = "340px";
+    const want = pop.offsetHeight;
+    const below = window.innerHeight - r.bottom - gap - margin;
+    const above = r.top - gap - margin;
+    if (want <= below || below >= above) {            // abrir hacia abajo
+      pop.style.top = Math.round(r.bottom + gap) + "px";
+      pop.style.maxHeight = Math.min(340, Math.round(below)) + "px";
+    } else {                                           // abrir hacia arriba
+      const h = Math.min(want, above);
+      pop.style.top = Math.round(r.top - gap - h) + "px";
+      pop.style.maxHeight = Math.round(h) + "px";
+    }
+  };
   const open = () => {
     render(); pop.classList.remove("hidden"); wrap.classList.add("open"); esCloseAll(wrap);
     trigger.setAttribute("aria-expanded", "true");
+    placePop();
+    window.addEventListener("scroll", close, true);   // scroll del modal o de la página → cerrar
+    window.addEventListener("resize", close);
     const selIdx = rows.findIndex(r => r.classList.contains("es-sel"));
     setActive(selIdx < 0 ? 0 : selIdx);
   };
@@ -1219,6 +1285,10 @@ function esEnhance(sel) {
     wrap.classList.remove("open"); pop.classList.add("hidden");
     trigger.setAttribute("aria-expanded", "false");
     pop.removeAttribute("aria-activedescendant");
+    // limpiar el posicionamiento fixed para volver al estado base
+    pop.style.position = pop.style.left = pop.style.right = pop.style.top = pop.style.width = pop.style.maxHeight = "";
+    window.removeEventListener("scroll", close, true);
+    window.removeEventListener("resize", close);
   };
   wrap._esClose = close; wrap._esTrigger = trigger;
   trigger.addEventListener("click", (e) => { e.stopPropagation(); wrap.classList.contains("open") ? close() : open(); });
@@ -1256,7 +1326,7 @@ function convertOne(it) {
     if (it.pages) fd.append("pages", it.pages);   // selección por-archivo del asistente (solo aplica a PDF)
     // Anonimización de PII (si está habilitada y el usuario eligió un modo).
     if (CAPS.anonimal) {
-      const am = $("anonMode")?.value;
+      const am = getAnonMode();
       if (am && am !== "off") {
         fd.append("anonymize", am);
         fd.append("anon_strict", $("anonStrict")?.value || REDACT_LEVELS.default);
@@ -1308,6 +1378,12 @@ function convertOne(it) {
       if (xhr.status >= 200 && xhr.status < 300 && !parseErr) {
         it.progress = 100; updateProgressDom(it); it.result = data; it.status = "done";
         try { collectPseudoMap(data); } catch {}
+      } else if (xhr.status === 503 && (it._anonRetries = (it._anonRetries || 0) + 1) <= 3) {
+        // Anonimizador calentando (503): el ítem sigue "convirtiendo" (sin error
+        // feo) y reintenta solo. Cae a mensaje solo si agota los reintentos.
+        render();
+        setTimeout(() => { if (it._aborted) return resolve(); convertOne(it).then(resolve); }, 10000);
+        return;
       } else {
         it.status = "error";
         it.error = (data && data.detail) || (parseErr ? t("toast.netErr") : `Error ${xhr.status}`);
@@ -1371,10 +1447,6 @@ window.addEventListener("paste", e => {
 $("convertBtn").addEventListener("click", () => convertAll(true));
 $("zipBtn").addEventListener("click", downloadZip);
 $("clearBtn").addEventListener("click", () => { items.clear(); PSEUDO_MAP = {}; $("rehydrateBtn")?.classList.add("hidden"); render(); });
-// Mostrar el selector de intensidad solo cuando hay un modo de anonimización activo.
-$("anonMode")?.addEventListener("change", () => {
-  $("anonStrict")?.classList.toggle("hidden", $("anonMode").value === "off");
-});
 
 // ---------- Gateway de seudonimización: re-hidratar la respuesta del LLM ----------
 let PSEUDO_MAP = {};
@@ -1408,15 +1480,25 @@ function getAnonRules() { try { return localStorage.getItem(RULES_STORE) || ""; 
 function rulesStatus(msg) { const e = $("rulesStatus"); if (e) e.textContent = msg || ""; }
 (function initAnonRules() {
   const ta = $("anonRules"); if (!ta) return;
+  const actions = $("rulesActions");
+  // Las acciones (Validar/Guardar/Borrar) solo se muestran si hay algo escrito:
+  // un "Guardar/Borrar" sobre un campo vacío confunde.
+  const toggleRulesActions = () => actions?.classList.toggle("hidden", ta.value.trim() === "");
   const saved = getAnonRules(); if (saved) ta.value = saved;
+  toggleRulesActions();
+  ta.addEventListener("input", () => { toggleRulesActions(); rulesStatus(""); });
   $("saveRulesBtn")?.addEventListener("click", () => {
     const v = ta.value.trim();
-    try { v ? localStorage.setItem(RULES_STORE, v) : localStorage.removeItem(RULES_STORE); } catch {}
-    rulesStatus(""); toast(v ? t("rules.saved") : t("rules.cleared"));
+    if (!v) {   // nada que guardar: limpiar lo persistido pero sin el alarmante "eliminadas"
+      try { localStorage.removeItem(RULES_STORE); } catch {}
+      rulesStatus(""); toast(t("rules.empty")); return;
+    }
+    try { localStorage.setItem(RULES_STORE, v); } catch {}
+    rulesStatus(""); toast(t("rules.saved"));
   });
   $("clearRulesBtn")?.addEventListener("click", () => {
     ta.value = ""; try { localStorage.removeItem(RULES_STORE); } catch {}
-    rulesStatus(""); toast(t("rules.cleared"));
+    rulesStatus(""); toggleRulesActions(); toast(t("rules.cleared"));
   });
   $("validateRulesBtn")?.addEventListener("click", async () => {
     rulesStatus("…");
@@ -1630,6 +1712,7 @@ window.addEventListener("scroll", () => {
     }
     const s = $("langSelect"); if (s) s.value = I18N.lang;
     applyYtckMask();   // refrescar el label del toggle (Mostrar/Ocultar)
+    if (CAPS) mountAnonOptions(CAPS);   // re-traducir el componente de anonimización
   };
   I18N.apply();
 })();

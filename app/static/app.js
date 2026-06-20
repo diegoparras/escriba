@@ -114,17 +114,29 @@ function onAuthed(caps) {
   consumeEcosystemHandoff();
 }
 
-// Puente del ecosistema: si un satélite (Extracta, etc., mismo origen) dejó un documento en
-// localStorage/sessionStorage, lo cargo como un ítem YA convertido (Markdown) listo para anonimizar
-// / convertir / chunk / exportar / audio. El documento nunca viajó por la red: es local.
+// Puente del ecosistema: un satélite (Extracta, Fisherboy…) me pasa un documento ya en Markdown,
+// listo para anonimizar / convertir / chunk / exportar / audio. El documento nunca viaja por la red.
+// Dos canales: (1) storage si estamos en el MISMO ORIGEN; (2) postMessage si estamos en orígenes
+// DISTINTOS (ej. extracta.dominio.com ↔ escriba.dominio.com) — ahí el storage no cruza.
 function consumeEcosystemHandoff() {
+  // Canal 1 — storage (mismo origen).
   let raw = null;
-  try { raw = localStorage.getItem("escriba.handoff") || sessionStorage.getItem("escriba.handoff"); } catch { return; }
-  if (!raw) return;
-  try { localStorage.removeItem("escriba.handoff"); sessionStorage.removeItem("escriba.handoff"); } catch {}  // consumir 1 vez (ambos canales)
-  let p; try { p = JSON.parse(raw); } catch { return; }
+  try { raw = localStorage.getItem("escriba.handoff") || sessionStorage.getItem("escriba.handoff"); } catch {}
+  if (raw) {
+    try { localStorage.removeItem("escriba.handoff"); sessionStorage.removeItem("escriba.handoff"); } catch {}
+    try { loadHandoffPayload(JSON.parse(raw)); } catch {}
+  }
+  // Canal 2 — postMessage (cross-origen). Escucho al que me abrió y le aviso que estoy listo.
+  window.addEventListener("message", (e) => {
+    if (e.source === window.opener && e.data && e.data.type === "escriba-handoff") loadHandoffPayload(e.data.payload);
+  });
+  try { if (window.opener) window.opener.postMessage({ type: "escriba-ready" }, "*"); } catch {}
+}
+function loadHandoffPayload(p) {
   if (!p || typeof p.content !== "string" || !p.content.trim()) return;
-  if (p.ts && Date.now() - p.ts > 5 * 60 * 1000) return;   // ignorar handoffs viejos (localStorage persiste)
+  if (p.ts && Date.now() - p.ts > 5 * 60 * 1000) return;     // viejo (localStorage persiste)
+  if (p.ts && p.ts === loadHandoffPayload._last) return;      // dedup: storage + postMessage pueden traer el mismo
+  loadHandoffPayload._last = p.ts;
   const md = p.content;
   const words = (md.match(/\S+/g) || []).length;
   const title = (p.title || "Documento").toString().slice(0, 120);

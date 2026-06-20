@@ -115,14 +115,16 @@ function onAuthed(caps) {
 }
 
 // Puente del ecosistema: si un satélite (Extracta, etc., mismo origen) dejó un documento en
-// sessionStorage, lo cargo como un ítem YA convertido (Markdown) listo para anonimizar /
-// convertir / chunk / exportar / audio. El documento nunca viajó por la red: es local.
+// localStorage/sessionStorage, lo cargo como un ítem YA convertido (Markdown) listo para anonimizar
+// / convertir / chunk / exportar / audio. El documento nunca viajó por la red: es local.
 function consumeEcosystemHandoff() {
-  let raw; try { raw = sessionStorage.getItem("escriba.handoff"); } catch { return; }
+  let raw = null;
+  try { raw = localStorage.getItem("escriba.handoff") || sessionStorage.getItem("escriba.handoff"); } catch { return; }
   if (!raw) return;
-  try { sessionStorage.removeItem("escriba.handoff"); } catch {}   // consumir una sola vez
+  try { localStorage.removeItem("escriba.handoff"); sessionStorage.removeItem("escriba.handoff"); } catch {}  // consumir 1 vez (ambos canales)
   let p; try { p = JSON.parse(raw); } catch { return; }
   if (!p || typeof p.content !== "string" || !p.content.trim()) return;
+  if (p.ts && Date.now() - p.ts > 5 * 60 * 1000) return;   // ignorar handoffs viejos (localStorage persiste)
   const md = p.content;
   const words = (md.match(/\S+/g) || []).length;
   const title = (p.title || "Documento").toString().slice(0, 120);

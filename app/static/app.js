@@ -149,10 +149,10 @@ function onAuthed(caps) {
   consumeEcosystemHandoff();
 }
 
-// Puente del ecosistema: un satélite (Extracta, Fisherboy…) me pasa un documento ya en Markdown,
+// Puente del ecosistema: un satélite (Fulgoria, Fisherboy…) me pasa un documento ya en Markdown,
 // listo para anonimizar / convertir / chunk / exportar / audio. El documento nunca viaja por la red.
 // Dos canales: (1) storage si estamos en el MISMO ORIGEN; (2) postMessage si estamos en orígenes
-// DISTINTOS (ej. extracta.dominio.com ↔ escriba.dominio.com) — ahí el storage no cruza.
+// DISTINTOS (ej. fulgoria.dominio.com ↔ escriba.dominio.com) — ahí el storage no cruza.
 function consumeEcosystemHandoff() {
   // Canal 1 — storage (mismo origen).
   let raw = null;
@@ -181,7 +181,9 @@ function loadHandoffPayload(p) {
     result: { markdown: md, source: (p.source || title).toString(), title, chars: md.length, words, elapsed_ms: 0 },
   });
   render();
-  toast((p.from === "extracta" ? "Extracta · " : "") + title, "ok");
+  // Rótulo del remitente del ecosistema ("extracta" = nombre histórico de Fulgoria, se mantiene por compat).
+  const SENDERS = { fulgoria: "Fulgoria", extracta: "Fulgoria", fisherboy: "Fisherboy" };
+  toast((SENDERS[p.from] ? SENDERS[p.from] + " · " : "") + title, "ok");
 }
 function applyLimits() {
   if (!CAPS) return;

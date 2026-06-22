@@ -5,3 +5,9 @@
 # subprocess (B603/B607/B404) y algún try/except son inherentes y aceptados. El
 # gate falla solo con severidad Medium/High (se corre con `bandit -ll`).
 exclude_dirs = ["tests", ".venv"]
+
+[tool.pytest.ini_options]
+# Suite de tests — arranca por la lógica fail-safe (auth HMAC + anti-SSRF). Correr: `pytest`.
+# Los tests de anonimización (anonimal/anon_rules) requieren `re2` (dep de runtime).
+testpaths = ["tests"]
+addopts = "-q"

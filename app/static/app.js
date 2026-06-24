@@ -252,6 +252,29 @@ if (_passToggle) {
   });
 }
 
+/* Ojito en el resto de los campos de contraseña (API key, etc.). El login ya trae el suyo
+   (queda dentro de .pass-wrap → se saltea). Reutiliza el patrón .pass-wrap/.pass-toggle. */
+function eyeify(root) {
+  (root || document).querySelectorAll('input[type="password"]').forEach((inp) => {
+    if (inp.dataset.eye || inp.closest(".pass-wrap")) return;
+    inp.dataset.eye = "1";
+    const w = document.createElement("div"); w.className = "pass-wrap";
+    inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "pass-toggle"; b.tabIndex = -1;
+    b.setAttribute("aria-label", "Mostrar u ocultar la contraseña");
+    b.innerHTML = EYE_SVG;
+    b.addEventListener("click", () => {
+      const s = inp.type === "password";
+      inp.type = s ? "text" : "password";
+      b.innerHTML = s ? EYE_OFF_SVG : EYE_SVG;
+      inp.focus();
+    });
+    w.appendChild(b);
+  });
+}
+eyeify();
+
 // ---------- Stats ----------
 let statsTimer = null;
 function startStats() {

@@ -1047,6 +1047,8 @@ function _mdeSwitch(tab) {
   document.querySelectorAll("#mdeTabs .mde-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
   $("mdeToolbar").style.display = tab === "md" ? "" : "none";
   $("mdeInsert").classList.toggle("hidden", tab === "md");
+  if (tab === "json") { _mdeJsonHlUpdate(); _mdeJsonHlSync(); }   // refrescar el overlay coloreado
+  if (typeof _mdeFind !== "undefined" && _mdeFind.classList.contains("on")) _mdeFindGo(1);
   _mdeUpdateInfo();
 }
 function _mdeWrap(before, after) {
@@ -1074,8 +1076,112 @@ const _MDE_ACTS = {
 // Bindings de una sola vez (referencian el estado MDE / _mdeItem actuales).
 document.querySelectorAll("#mdeToolbar .mde-tool").forEach(b => b.addEventListener("click", () => { const f = _MDE_ACTS[b.dataset.md]; if (f) f(); }));
 document.querySelectorAll("#mdeTabs .mde-tab").forEach(b => b.addEventListener("click", () => _mdeSwitch(b.dataset.tab)));
+
+/* ===== Buscar y reemplazar en el editor (markdown / JSON), sin dependencias ===== */
+const _mdeFind = document.createElement("div");
+_mdeFind.className = "mde-find";
+_mdeFind.innerHTML = `
+  <input type="text" class="mde-find-q" placeholder="Buscar" autocomplete="off" spellcheck="false">
+  <input type="text" class="mde-find-r" placeholder="Reemplazar" autocomplete="off" spellcheck="false">
+  <button type="button" class="mde-find-prev" title="Anterior (Shift+Enter)">↑</button>
+  <button type="button" class="mde-find-next" title="Siguiente (Enter)">↓</button>
+  <button type="button" class="mde-find-rep">Reemplazar</button>
+  <button type="button" class="mde-find-all">Todo</button>
+  <label style="font-size:12px;color:var(--muted);display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" class="mde-find-case"> Aa</label>
+  <span class="mde-find-count"></span>
+  <button type="button" class="mde-find-x" title="Cerrar (Esc)">✕</button>`;
+$("mdeBody").parentNode.insertBefore(_mdeFind, $("mdeBody"));
+const _mdeFindQ = _mdeFind.querySelector(".mde-find-q"), _mdeFindR = _mdeFind.querySelector(".mde-find-r");
+const _mdeFindCase = _mdeFind.querySelector(".mde-find-case"), _mdeFindCount = _mdeFind.querySelector(".mde-find-count");
+const _mdeActiveTa = () => MDE.tab === "json" ? $("mdeJson") : (MDE.tab === "md" ? $("mdeText") : null);
+function _mdeFindMatches(ta, q) {
+  if (!q) return [];
+  const hay = _mdeFindCase.checked ? ta.value : ta.value.toLowerCase();
+  const needle = _mdeFindCase.checked ? q : q.toLowerCase();
+  const idx = []; let i = hay.indexOf(needle);
+  while (i !== -1) { idx.push(i); i = hay.indexOf(needle, i + needle.length); }
+  return idx;
+}
+function _mdeFindGo(dir) {
+  const ta = _mdeActiveTa(); if (!ta) { _mdeFindCount.textContent = ""; return; }
+  const q = _mdeFindQ.value, m = _mdeFindMatches(ta, q);
+  if (!m.length) { _mdeFindCount.textContent = q ? "0/0" : ""; return; }
+  let pos;
+  if (dir < 0) { pos = m.filter(i => i < ta.selectionStart).pop(); if (pos == null) pos = m[m.length - 1]; }
+  else { pos = m.find(i => i >= ta.selectionEnd); if (pos == null) pos = m[0]; }
+  ta.focus(); ta.setSelectionRange(pos, pos + q.length);
+  _mdeFindCount.textContent = `${m.indexOf(pos) + 1}/${m.length}`;
+}
+function _mdeAfterFindEdit(ta) {
+  _mdeUpdateInfo();
+  if (ta === $("mdeText")) _mdePreviewUpdate();
+  else if (ta === $("mdeJson")) { _mdeSetErr(""); _mdeJsonHlUpdate(); _mdeJsonHlSync(); }
+}
+function _mdeReplaceOne() {
+  const ta = _mdeActiveTa(); if (!ta) return;
+  const q = _mdeFindQ.value; if (!q) return;
+  const selTxt = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  const eq = _mdeFindCase.checked ? selTxt === q : selTxt.toLowerCase() === q.toLowerCase();
+  if (eq) {
+    const s = ta.selectionStart;
+    ta.value = ta.value.slice(0, s) + _mdeFindR.value + ta.value.slice(ta.selectionEnd);
+    ta.setSelectionRange(s, s + _mdeFindR.value.length); _mdeAfterFindEdit(ta);
+  }
+  _mdeFindGo(1);
+}
+function _mdeReplaceAll() {
+  const ta = _mdeActiveTa(); if (!ta) return;
+  const q = _mdeFindQ.value; if (!q) return;
+  const m = _mdeFindMatches(ta, q); if (!m.length) { _mdeFindCount.textContent = "0/0"; return; }
+  let v = ta.value;
+  for (let k = m.length - 1; k >= 0; k--) v = v.slice(0, m[k]) + _mdeFindR.value + v.slice(m[k] + q.length);
+  ta.value = v; _mdeAfterFindEdit(ta); _mdeFindCount.textContent = `${m.length} reempl.`;
+}
+function _mdeToggleFind(show) {
+  const on = show != null ? show : !_mdeFind.classList.contains("on");
+  _mdeFind.classList.toggle("on", on);
+  if (on) {
+    const ta = _mdeActiveTa();
+    if (ta) { const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd); if (sel && sel.length < 80) _mdeFindQ.value = sel; }
+    _mdeFindQ.focus(); _mdeFindQ.select(); _mdeFindGo(1);
+  } else { const ta = _mdeActiveTa(); if (ta) ta.focus(); }
+}
+_mdeFind.querySelector(".mde-find-next").addEventListener("click", () => _mdeFindGo(1));
+_mdeFind.querySelector(".mde-find-prev").addEventListener("click", () => _mdeFindGo(-1));
+_mdeFind.querySelector(".mde-find-rep").addEventListener("click", _mdeReplaceOne);
+_mdeFind.querySelector(".mde-find-all").addEventListener("click", _mdeReplaceAll);
+_mdeFind.querySelector(".mde-find-x").addEventListener("click", () => _mdeToggleFind(false));
+_mdeFindCase.addEventListener("change", () => _mdeFindGo(1));
+_mdeFindQ.addEventListener("input", () => _mdeFindGo(1));
+_mdeFindQ.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); _mdeFindGo(e.shiftKey ? -1 : 1); } else if (e.key === "Escape") { e.preventDefault(); _mdeToggleFind(false); } });
+_mdeFindR.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); _mdeReplaceOne(); } else if (e.key === "Escape") { e.preventDefault(); _mdeToggleFind(false); } });
+$("mdEditorModal").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) { e.preventDefault(); _mdeToggleFind(true); } });
 $("mdeText").addEventListener("input", () => { _mdeUpdateInfo(); clearTimeout(_mdeTimer); _mdeTimer = setTimeout(_mdePreviewUpdate, 200); });
-$("mdeJson").addEventListener("input", () => { _mdeUpdateInfo(); _mdeSetErr(""); });
+$("mdeJson").addEventListener("input", () => { _mdeUpdateInfo(); _mdeSetErr(""); _mdeJsonHlUpdate(); _mdeJsonHlSync(); });
+
+/* Resaltado de sintaxis JSON (overlay coloreado detrás del textarea) */
+const _mdeJsonHl = $("mdeJsonHl");
+function _mdeHlEsc(x) { return x.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+function _mdeJsonHL(s) {
+  return _mdeHlEsc(s).replace(
+    /("(?:\\.|[^"\\])*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false)\b|\b(null)\b/g,
+    (m, str, colon, num, bool, nul) => {
+      if (str !== undefined) return colon ? `<span class="jk">${str}</span>${colon}` : `<span class="js">${str}</span>`;
+      if (num !== undefined) return `<span class="jn">${num}</span>`;
+      if (bool !== undefined) return `<span class="jb">${bool}</span>`;
+      if (nul !== undefined) return `<span class="ju">${nul}</span>`;
+      return m;
+    });
+}
+function _mdeJsonHlUpdate() {
+  if (!_mdeJsonHl) return;
+  const v = $("mdeJson").value;
+  _mdeJsonHl.innerHTML = _mdeJsonHL(v) + "\n";
+  let bad = false; if (v.trim()) { try { JSON.parse(v); } catch { bad = true; } }
+  _mdeJsonHl.classList.toggle("bad", bad);
+}
+function _mdeJsonHlSync() { if (_mdeJsonHl) { _mdeJsonHl.scrollTop = $("mdeJson").scrollTop; _mdeJsonHl.scrollLeft = $("mdeJson").scrollLeft; } }
+$("mdeJson").addEventListener("scroll", _mdeJsonHlSync);
 $("mdePrevToggle").addEventListener("click", () => {
   MDE.preview = !MDE.preview;
   $("mdePrevToggle").classList.toggle("on", MDE.preview);
@@ -1108,6 +1214,7 @@ function openMdEditor(it) {
   $("mdeText").value = it.result.markdown || "";
   MDE.tableArr = _mdeTableToRows(it.result.markdown).map(o => ({ ...o }));
   $("mdeJson").value = MDE.tableArr.length ? JSON.stringify(MDE.tableArr, null, 2) : "";
+  _mdeJsonHlUpdate();
   _mdeRenderTable();
   MDE.preview = true; $("mdePrevToggle").classList.add("on");
   _mdeSetErr(""); _mdePreviewUpdate();

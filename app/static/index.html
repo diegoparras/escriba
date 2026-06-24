@@ -453,14 +453,39 @@
   .mde-prev { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; color: var(--accent); background: none; border: 0; cursor: pointer; padding: 6px 9px; border-radius: 7px; }
   .mde-prev svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .mde-prev.on { background: color-mix(in srgb, var(--accent) 12%, transparent); }
-  .mde-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .mde-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; gap: 12px; position: relative; }
   .mde-body > * { display: none; min-height: 0; }
+  /* Resaltado de sintaxis JSON: overlay coloreado detrás del textarea (texto transparente) */
+  .mde-body[data-tab="json"] #mdeJsonHl { display: block; }
+  .mde-jhl { position: absolute; inset: 0; margin: 0; z-index: 0; overflow: hidden; pointer-events: none;
+    font-family: 'SF Mono','JetBrains Mono',Menlo,Consolas,monospace; font-size: 13px; line-height: 1.5;
+    padding: 12px; border: 1px solid transparent; border-radius: 12px; box-sizing: border-box;
+    white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; color: var(--muted); background: var(--card-2); }
+  .mde-body[data-tab="json"] #mdeJson { position: relative; z-index: 1; background: transparent !important;
+    color: transparent !important; -webkit-text-fill-color: transparent; caret-color: var(--text); }
+  .mde-jhl .jk { color: var(--accent); }
+  .mde-jhl .js { color: #2e9e5b; }
+  .mde-jhl .jn { color: #c2792b; }
+  .mde-jhl .jb, .mde-jhl .ju { color: #9a5cd0; }
+  .mde-jhl.bad { box-shadow: inset 3px 0 0 var(--err); }
   .mde-body[data-tab="md"] #mdeText { display: block; }
   .mde-body[data-tab="md"].split { grid-template-columns: 1fr 1fr; }
   .mde-body[data-tab="md"].split #mdePreview { display: block; }
   .mde-body[data-tab="json"] #mdeJson { display: block; }
   .mde-body[data-tab="table"] #mdeTable { display: block; }
   .mde-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 12px; }
+  /* Barra buscar/reemplazar del editor */
+  .mde-find { display: none; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-2); }
+  .mde-find.on { display: flex; }
+  .mde-find input[type="text"] { font: inherit; font-size: 13px; padding: 5px 8px; width: 150px;
+    border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .mde-find input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  .mde-find button { font: inherit; font-size: 12.5px; padding: 5px 9px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
+  .mde-find button:hover { border-color: var(--accent); }
+  .mde-find-count { font-size: 12px; color: var(--muted); min-width: 48px; }
+  .mde-find-x { margin-left: auto; }
   .mde-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .mde-table th { position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; font-weight: 600; color: var(--muted); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; padding: 9px 13px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .mde-table td { padding: 0; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); vertical-align: top; }
@@ -1019,6 +1044,7 @@
       <textarea id="mdeText" spellcheck="false" autocomplete="off" style="width:100%;height:100%;resize:none;font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;font-size:13px;line-height:1.5;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--card-2);color:var(--text)"></textarea>
       <div id="mdePreview" class="preview" style="overflow:auto;border:1px solid var(--border);border-radius:12px;padding:12px"></div>
       <textarea id="mdeJson" spellcheck="false" autocomplete="off" style="width:100%;height:100%;resize:none;font-family:'SF Mono','JetBrains Mono',Menlo,Consolas,monospace;font-size:13px;line-height:1.5;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--card-2);color:var(--text)"></textarea>
+      <pre class="mde-jhl" id="mdeJsonHl" aria-hidden="true"></pre>
       <div id="mdeTable" class="mde-table-wrap"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">

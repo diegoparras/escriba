@@ -557,21 +557,7 @@
   </div>
 </div>
 
-<script>
-  /* En modo federado, la pantalla de login muestra "Entrar con Lockatus" y oculta el form de
-     contraseña por nivel (la identidad y el rol los gestiona el hub). Self-contained. */
-  (function () {
-    var mode = (document.querySelector('meta[name="esc-auth-mode"]') || {}).content || "local";
-    if (mode !== "federado") return;
-    var f = document.querySelector(".login-form");
-    if (!f) return;
-    ["#loginPass", ".pass-wrap", "#loginBtn", ".roles-hint", ".login-label"].forEach(function (s) {
-      var e = f.querySelector(s); if (e) e.style.display = "none";
-    });
-    var sso = document.getElementById("loginSSO"); if (sso) sso.style.display = "block";
-    var p = f.querySelector("p"); if (p) p.textContent = "Acceso unificado de la Suite Escriba.";
-  })();
-</script>
+<script src="/static/auth-mode.js?v=__VER__"></script>
 
 <div class="wrap hidden" id="appWrap">
   <div class="topbar">

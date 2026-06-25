@@ -1,0 +1,199 @@
+/* ============================================================================
+   SISTEMA DE DISEÑO ESCRIBA — fuente de verdad de la Suite
+   ----------------------------------------------------------------------------
+   Una sola base visual para TODAS las apps (Escriba, Lockatus, Selega, Fulgoria,
+   Fisherboy, Anonimal, Arcanum, Trustux). La idea (filosofía Apple): cambian el
+   COLOR, el NOMBRE y la FUNCIÓN, pero la EXPERIENCIA es idéntica — "todo está ahí".
+
+   Lo ÚNICO que cambia por app es el ACENTO. Cada app define, después de importar
+   este archivo, su bloque de acento (ver tabla en el SKILL escriba-design-system):
+
+       :root            { --accent:#XXXXXX; --accent-2:#XXXXXX; --on-accent:#fff;
+                          --ring:0 0 0 3px rgba(R,G,B,.20); }
+       :root[data-theme="dark"] { --accent:#XXXXXX; --accent-2:#XXXXXX;
+                          --ring:0 0 0 3px rgba(R,G,B,.26); }
+
+   Reglas fijas del ecosistema:
+     · NADA de glow (brillo/halo de color). Sombras neutras sutiles, sí.
+     · Sin emojis en la UI: iconos SVG line (stroke currentColor).
+     · Claro/oscuro por [data-theme] en <html> (un solo mecanismo, no siete).
+     · Tipografía: Inter (texto) + JetBrains Mono (cifras). Vendorizadas, sin CDN.
+
+   Las fuentes NO van acá (cada app las sirve desde su propia ruta estática).
+   Incluí en cada app un @font-face de "Inter" y "JetBrains Mono" apuntando a sus
+   /vendor/fonts/ — ver el SKILL. Si faltan, cae a system-ui sin romper nada.
+   ============================================================================ */
+
+/* ---- Tokens: tema CLARO (default). Acento default = Escriba (el hub). -------- */
+:root {
+  --bg: #fafafb; --bg-2: #ffffff; --panel: #ffffff;
+  --card: rgba(15,15,20,.028); --card-2: rgba(15,15,20,.016);
+  --border: rgba(15,15,20,.10); --hairline: rgba(15,15,20,.17);
+  --text: #16161a; --muted: #70707b; --muted-2: #3c3c44;
+  --accent: #e06a3a; --accent-2: #c25329; --on-accent: #ffffff;
+  --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+  --radius: 12px; --radius-lg: 16px;
+  --ring: 0 0 0 3px rgba(224,106,58,.20);
+  --shadow: 0 1px 2px rgba(15,15,20,.04), 0 12px 32px -16px rgba(15,15,20,.16);
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  color-scheme: light;
+  /* alias de compatibilidad para CSS heredado de las apps */
+  --panel2: var(--card); --line: var(--border); --txt: var(--text); --bad: var(--err); --na: var(--muted);
+}
+/* ---- Tokens: tema OSCURO --------------------------------------------------- */
+:root[data-theme="dark"] {
+  --bg: #0a0a0c; --bg-2: #101014; --panel: #141418;
+  --card: rgba(255,255,255,.04); --card-2: rgba(255,255,255,.022);
+  --border: rgba(255,255,255,.10); --hairline: rgba(255,255,255,.16);
+  --text: #ededf0; --muted: #8b8b96; --muted-2: #bdbdc7;
+  --accent: #ef8b66; --accent-2: #e06a3a; --on-accent: #ffffff;
+  --ok: #3fb950; --warn: #d6a01a; --err: #f85149;
+  --ring: 0 0 0 3px rgba(239,139,102,.26);
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+
+/* ---- Base ------------------------------------------------------------------ */
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text); letter-spacing: -.011em;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+.hidden { display: none !important; }
+a.link { color: var(--accent); cursor: pointer; text-decoration: none; }
+a.link:hover { text-decoration: underline; }
+
+/* ---- Topbar (header hijo directo de body) --------------------------------- */
+header.esc-topbar, body > header.app-header {
+  display: flex; align-items: center; gap: 12px; padding: 12px 22px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10; }
+.esc-topbar h1, .app-header h1 { font-size: 19px; margin: 0; letter-spacing: -.02em; font-weight: 600; line-height: 1.1; }
+.esc-topbar .sp, .app-header .sp { flex: 1; }
+.logo.brand { width: 30px; height: 30px; border-radius: 8px; display: block; }
+.logo-link { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; color: inherit; cursor: pointer; }
+
+/* ---- Controles: inputs / select / textarea -------------------------------- */
+select, input, textarea { font: inherit; font-size: 14px; color: var(--text);
+  background: var(--card-2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; outline: none;
+  transition: border-color .15s, box-shadow .15s, background .15s; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg-2); }
+input::placeholder, textarea::placeholder { color: var(--muted); }
+select { appearance: none; cursor: pointer; padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2370707b' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; }
+select option { background: var(--panel); color: var(--text); }
+
+/* ---- Botones --------------------------------------------------------------- */
+button { font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  color: var(--on-accent); background: var(--accent); border: 1px solid var(--accent); border-radius: 10px;
+  padding: 9px 15px; transition: background .18s, border-color .18s, transform .08s; }
+button:hover { background: var(--accent-2); border-color: var(--accent-2); }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .55; cursor: not-allowed; }
+button.ghost { background: var(--card); color: var(--text); border-color: var(--border); }
+button.ghost:hover { background: var(--card-2); border-color: var(--hairline); }
+button.mini { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+button.icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; line-height: 0;
+  background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 10px; }
+button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline); }
+
+/* ---- Badge ----------------------------------------------------------------- */
+.badge { font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted-2); background: transparent; }
+
+/* ---- Menú kebab (⋮) — TODO el chrome va acá adentro ------------------------ */
+/* Patrón obligatorio: en el topbar, a la derecha, un solo botón ⋮ (icon-btn).
+   Adentro: usuario, selectores (idioma, etc.), tema, secciones, "Acerca de" y
+   "Cerrar sesión". NADA suelto en el header salvo el logo y el botón ⋮. */
+.menu-wrap { position: relative; flex: 0 0 auto; }
+.menu-wrap .caret { color: var(--muted); font-size: 11px; }
+.menu { position: absolute; left: 0; top: calc(100% + 6px); min-width: 230px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; z-index: 60;
+  display: flex; flex-direction: column; gap: 1px; }
+.menu.menu-right { left: auto; right: 0; }
+.menu-user { padding: 7px 11px 4px; font-size: 12.5px; color: var(--muted-2); font-weight: 500; }
+.menu-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none;
+  border: 0; color: var(--text); font: inherit; font-size: 13.5px; padding: 9px 11px; border-radius: 8px;
+  cursor: pointer; text-decoration: none; }
+.menu-item:hover { background: var(--card); }
+.menu-item svg { color: var(--muted-2); flex: 0 0 auto; }
+.menu-item:hover svg { color: var(--text); }
+.menu-item .mi-sub { margin-left: auto; font-size: 11px; color: var(--muted); }
+.menu-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+.menu-field { display: flex; flex-direction: column; gap: 5px; padding: 7px 11px; }
+.menu-field-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.menu-field select { width: 100%; }
+.menu-switch { cursor: pointer; }
+.menu-switch input { position: absolute; opacity: 0; }
+.menu-switch .track { margin-left: auto; width: 34px; height: 20px; border-radius: 999px; background: var(--border);
+  position: relative; transition: background .18s; flex: 0 0 auto; }
+.menu-switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--muted-2); transition: transform .18s, background .18s; }
+.menu-switch input:checked + .track { background: var(--accent); }
+.menu-switch input:checked + .track::after { transform: translateX(14px); background: #fff; }
+
+/* ---- Modales (incluye "Acerca de") ---------------------------------------- */
+.modal-back { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px;
+  background: color-mix(in srgb, var(--bg) 50%, rgba(0,0,0,.55)); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.modal-card { position: relative; width: min(440px, 94vw); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 18px; box-shadow: var(--shadow); padding: 22px; animation: esc-pop .22s cubic-bezier(.2,.9,.3,1.2); }
+.modal-x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; display: grid; place-items: center;
+  border-radius: 9px; border: 1px solid var(--border); background: transparent; color: var(--muted-2); cursor: pointer; font-size: 13px; }
+.modal-x:hover { color: var(--text); border-color: var(--accent); }
+.modal-tit { margin: 0 0 8px; font-size: 17px; font-weight: 600; padding-right: 28px; }
+.modal-cuerpo { color: var(--muted-2); font-size: 14px; line-height: 1.5; }
+.modal-cuerpo p { margin: 0 0 8px; }
+.modal-acciones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.modal-acciones button { border-radius: 999px; padding: 9px 18px; }
+@keyframes esc-pop { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+
+/* Cuerpo del "Acerca de": filas nombre→valor + créditos */
+.about-rows { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 12px 0 0; font-size: 13.5px; }
+.about-rows dt { color: var(--muted); }
+.about-rows dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+.about-foot { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--hairline); color: var(--muted); font-size: 12.5px; text-align: center; }
+
+/* ---- Login (gate difuminado) ---------------------------------------------- */
+.login-overlay { position: fixed; inset: 0; display: grid; place-items: center; z-index: 100; padding: 20px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1); backdrop-filter: blur(12px) saturate(1.1); }
+.login-card { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px 26px; text-align: center; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 11px; animation: esc-cardpop .2s cubic-bezier(.2,.8,.2,1); }
+.login-card .logo { align-self: center; width: 44px; height: 44px; border-radius: 11px; margin-bottom: 4px; }
+.login-card h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.login-sub { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.login-card input { text-align: center; }
+.login-err { color: var(--err); font-size: 12.5px; min-height: 16px; }
+.login-sso { display: inline-block; text-decoration: none; text-align: center; padding: 10px 14px;
+  border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 14px; }
+.login-sso:hover { background: var(--accent-2); }
+.login-foot { color: var(--muted); font-size: 11.5px; margin: 6px 0 0; }
+@keyframes esc-cardpop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+
+/* ---- Ojito mostrar/ocultar contraseña (compartido) ------------------------- */
+/* REGLA (para que no se vuelva a descentrar): el toggle es position:absolute con
+   top:50% + translateY(-50%), padding:0. El input padre va en .pass-wrap. */
+.pass-wrap { position: relative; display: flex; align-items: center; }
+.pass-wrap > input { flex: 1 1 auto; padding-right: 36px; }
+.pass-toggle { position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 28px; height: 28px; padding: 0; display: grid; place-items: center; background: none; border: 0;
+  border-radius: 7px; color: var(--muted); cursor: pointer; transition: color .15s, background .15s; }
+.pass-toggle:hover { color: var(--text); background: var(--card-2); }
+.pass-toggle svg { width: 16px; height: 16px; }
+/* En modo federado el campo de clave está oculto → su ojito tampoco se muestra. */
+.pass-wrap.hidden .pass-toggle, input.hidden + .pass-toggle { display: none !important; }
+
+/* ---- Switch reutilizable --------------------------------------------------- */
+.switch { display: inline-flex; align-items: center; cursor: pointer; vertical-align: middle; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .track { width: 38px; height: 22px; border-radius: 999px; background: var(--border); position: relative; transition: background .18s; }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted-2); transition: transform .18s, background .18s; }
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(16px); background: #fff; }
+
+/* ---- Hero (pantalla de inicio, estilo familia) ----------------------------- */
+.hero { text-align: center; margin: 44px 0 30px; }
+.hero h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.06; margin: 0 0 14px; font-weight: 600; letter-spacing: -.03em; }
+.hero .sub { color: var(--muted); font-size: clamp(15px, 2vw, 19px); max-width: 620px; margin: 0 auto; line-height: 1.45; }
+.pie { text-align: center; color: var(--muted); font-size: 12px; margin-top: 38px; line-height: 1.6; }

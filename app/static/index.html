@@ -12,6 +12,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
 <!-- @fontsource-variable/inter/index.css: URL sin pin de versión (jsdelivr sirve la última = 5.2.8 hoy); NO se le agrega SRI porque rompería al publicarse una nueva versión. Falla con fallback a fuentes del sistema. -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter/index.css" />
+<!-- Sistema de diseño canónico de la Suite (tokens + componentes compartidos). Va ANTES
+     de los estilos propios; estos solo agregan lo específico de Escriba y el acento coral. -->
+<link rel="stylesheet" href="/static/escriba-ui.css?v=__VER__" />
 <style>
   /* Design system — neutro frío y afilado (estilo Linear/Vercel), acento coral de marca */
   :root {
@@ -19,8 +22,9 @@
     --card: rgba(255,255,255,0.04); --card-2: rgba(255,255,255,0.022);
     --border: rgba(255,255,255,0.10); --hairline: rgba(255,255,255,0.16);
     --text: #ededf0; --muted: #8b8b96; --muted-2: #bdbdc7;
-    --blue: #ef8b66; --blue-press: #e3754d;
-    --accent: #ef8b66; --accent-2: #e3754d;
+    /* Acento Escriba oscuro (canónico): #ef8b66 / hover #e06a3a */
+    --blue: #ef8b66; --blue-press: #e06a3a;
+    --accent: #ef8b66; --accent-2: #e06a3a;
     --on-accent: #1a1208;
     --ok: #3fb950; --warn: #d6a01a; --err: #f85149;
     --radius: 12px; --radius-lg: 16px;
@@ -33,7 +37,8 @@
     --card: rgba(15,15,20,0.028); --card-2: rgba(15,15,20,0.016);
     --border: rgba(15,15,20,0.10); --hairline: rgba(15,15,20,0.17);
     --text: #16161a; --muted: #70707b; --muted-2: #3c3c44;
-    --blue: #e06a3a; --blue-press: #cf5a2c; --accent: #e06a3a; --accent-2: #d2764f;
+    /* Acento Escriba claro (canónico): #e06a3a / hover #c25329 */
+    --blue: #e06a3a; --blue-press: #c25329; --accent: #e06a3a; --accent-2: #c25329;
     --on-accent: #ffffff;
     --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
     --ring: 0 0 0 3px rgba(224,106,58,.18);
@@ -579,7 +584,7 @@
     </div>
     <div class="topbar-actions">
       <div class="menu-wrap">
-        <button class="icon-btn" id="menuBtn" data-i18n-title="nav.menu" title="Menú" aria-haspopup="menu" aria-expanded="false" aria-controls="headerMenu" style="font-size:20px;line-height:1">⋯</button>
+        <button class="icon-btn" id="menuBtn" data-i18n-title="nav.menu" title="Menú" aria-haspopup="menu" aria-expanded="false" aria-controls="headerMenu" aria-label="Menú"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="10" cy="4" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="10" cy="16" r="1.7"/></svg></button>
         <div class="menu hidden" id="headerMenu" role="menu">
           <div class="menu-head"><span class="badge" id="roleBadge"></span></div>
           <div class="menu-sep"></div>

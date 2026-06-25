@@ -6,6 +6,7 @@
 <title>Escriba · El traductor universal al idioma de la IA</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
 <meta name="theme-color" content="#fdf7f3" />
+<meta name="esc-auth-mode" content="__AUTH_MODE__" />
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" integrity="sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" integrity="sha384-3HPB1XT51W3gGRxAmZ+qbZwRpRlFQL632y8x+adAqCr4Wp3TaWwCLSTAJJKbyWEK" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
@@ -545,6 +546,7 @@
         <button type="button" class="pass-toggle" id="loginPassToggle" data-i18n-label="login.passToggle" aria-label="Mostrar u ocultar la contraseña"></button>
       </div>
       <button id="loginBtn" class="btn" style="width:100%;margin-top:14px" data-i18n="login.enter">Entrar →</button>
+      <a id="loginSSO" class="btn" href="/auth/login" style="width:100%;margin-top:14px;display:none;text-align:center;text-decoration:none;box-sizing:border-box">Entrar con Lockatus</a>
       <div class="roles-hint">
         <span class="badge dios"><svg class="role-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17 4 7 8.5 11 12 6 15.5 11 20 7 19 17Z"/><path d="M5.4 20.2h13.2"/></svg><span>DIOS</span></span>
         <span class="badge angel"><svg class="role-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="4" rx="3" ry="1.1"/><path d="M12 7.5v8.5"/><path d="M12 9.5C10 7 7 6.4 4.4 7.2c0 3.3 2.1 6.1 5.1 6.8"/><path d="M12 9.5c2-2.5 5-3.1 7.6-2.3 0 3.3-2.1 6.1-5.1 6.8"/></svg><span>ANGEL</span></span>
@@ -554,6 +556,22 @@
     </div>
   </div>
 </div>
+
+<script>
+  /* En modo federado, la pantalla de login muestra "Entrar con Lockatus" y oculta el form de
+     contraseña por nivel (la identidad y el rol los gestiona el hub). Self-contained. */
+  (function () {
+    var mode = (document.querySelector('meta[name="esc-auth-mode"]') || {}).content || "local";
+    if (mode !== "federado") return;
+    var f = document.querySelector(".login-form");
+    if (!f) return;
+    ["#loginPass", ".pass-wrap", "#loginBtn", ".roles-hint", ".login-label"].forEach(function (s) {
+      var e = f.querySelector(s); if (e) e.style.display = "none";
+    });
+    var sso = document.getElementById("loginSSO"); if (sso) sso.style.display = "block";
+    var p = f.querySelector("p"); if (p) p.textContent = "Acceso unificado de la Suite Escriba.";
+  })();
+</script>
 
 <div class="wrap hidden" id="appWrap">
   <div class="topbar">

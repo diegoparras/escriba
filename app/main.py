@@ -11,6 +11,7 @@ Seguridad + roles:
 
 import asyncio
 import hashlib
+import html
 import json
 import logging
 import os
@@ -30,7 +31,7 @@ from urllib.parse import urlparse
 import psutil
 import requests
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from markitdown import MarkItDown
@@ -502,6 +503,76 @@ def _login_register_fail(ip: str) -> None:
 def _login_reset(ip: str) -> None:
     with _login_fail_lock:
         _login_fail.pop(ip, None)
+
+
+# --- Federación opcional con Lockatus (SSO de la suite). Default 'local' = sin cambios. ---
+# En 'federado', /auth/login delega en el hub y /auth/callback canjea el código, verifica los
+# JWT RS256 contra el JWKS (offline), mapea el rol y siembra la MISMA cookie mid_session → el
+# resto del gate por rol de Escriba no cambia. El login propio por contraseña sigue intacto.
+AUTH_MODE = os.getenv("AUTH_MODE", "local").lower()
+_OIDC_COOKIE = "mid_oidc"
+LK_ISSUER = os.getenv("LOCKATUS_ISSUER", "").rstrip("/")
+LK_CLIENT = os.getenv("LOCKATUS_CLIENT_ID", "escriba")
+LK_REDIRECT = os.getenv("LOCKATUS_REDIRECT_URI", "")
+# Rol de Lockatus → rol de Escriba (dios/angel/humano). Acepta el catálogo real y los genéricos.
+_LK_ROLE_MAP = {"dueño": "dios", "dueno": "dios", "owner": "dios", "admin": "dios",
+                "editor": "angel", "lector": "humano", "viewer": "humano"}
+if AUTH_MODE == "federado" and not (LK_ISSUER and LK_REDIRECT):
+    raise RuntimeError("AUTH_MODE=federado requiere LOCKATUS_ISSUER y LOCKATUS_REDIRECT_URI.")
+_lk_client = None
+
+
+def _lk():
+    global _lk_client
+    if _lk_client is None:
+        from .lockatus_client import Lockatus
+        _lk_client = Lockatus(LK_ISSUER, LK_CLIENT, LK_REDIRECT, auth.SECRET_KEY)
+    return _lk_client
+
+
+def _role_from_lockatus(lk_role):
+    if lk_role in auth.ROLE_CAPS:
+        return lk_role
+    return _LK_ROLE_MAP.get((lk_role or "").lower(), "humano")
+
+
+@app.get("/auth/login", include_in_schema=False)
+def auth_login(request: Request):
+    if AUTH_MODE != "federado":
+        return RedirectResponse("/", status_code=302)
+    lk = _lk()
+    verifier, challenge = lk.pkce()
+    state, nonce = lk.random_id(), lk.random_id()
+    tx = lk.sign({"verifier": verifier, "state": state, "nonce": nonce, "exp": (time.time() + 600) * 1000})
+    resp = RedirectResponse(lk.authorize_url(state, nonce, challenge), status_code=302)
+    resp.set_cookie(_OIDC_COOKIE, tx, max_age=600, httponly=True, samesite="lax",
+                    secure=_cookie_secure(request), path="/")
+    return resp
+
+
+@app.get("/auth/callback", include_in_schema=False)
+def auth_callback(request: Request):
+    if AUTH_MODE != "federado":
+        return RedirectResponse("/", status_code=302)
+    if request.query_params.get("error"):
+        return HTMLResponse(f"Acceso denegado por Lockatus: {html.escape(request.query_params['error'])}", status_code=403)
+    lk = _lk()
+    tx = lk.unsign(request.cookies.get(_OIDC_COOKIE, ""))
+    code, state = request.query_params.get("code"), request.query_params.get("state")
+    if not tx or not code or state != tx["state"]:
+        return RedirectResponse("/auth/login", status_code=302)
+    try:
+        tok = lk.exchange(code, tx["verifier"])
+        lk.verify_jwt(tok["id_token"], audience=LK_CLIENT, nonce=tx["nonce"])
+        claims = lk.verify_jwt(tok["access_token"], audience=LK_CLIENT)
+    except Exception:  # noqa: BLE001 — token inválido = sin sesión
+        return RedirectResponse("/?login=error", status_code=302)
+    role = _role_from_lockatus(claims.get("role"))
+    resp = RedirectResponse("/", status_code=302)
+    resp.delete_cookie(_OIDC_COOKIE, path="/")
+    resp.set_cookie(auth.COOKIE_NAME, auth.make_token(role), max_age=auth.SESSION_TTL,
+                    httponly=True, samesite="lax", secure=_cookie_secure(request), path="/")
+    return resp
 
 
 @app.post("/api/login")
@@ -1368,7 +1439,7 @@ def urlsplit_path(url: str) -> str:
 # index.html con la versión ya inyectada en las URLs de los assets (?v=) para
 # invalidar la caché del navegador en cada deploy. Se calcula UNA vez al import
 # (el archivo no cambia en runtime) en vez de leer disco + .replace por request.
-_INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace("__VER__", APP_VERSION)
+_INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace("__VER__", APP_VERSION).replace("__AUTH_MODE__", AUTH_MODE)
 
 
 @app.get("/", response_class=HTMLResponse)

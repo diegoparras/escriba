@@ -138,7 +138,7 @@ button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline)
 .modal-card { position: relative; width: min(440px, 94vw); background: var(--panel); border: 1px solid var(--border);
   border-radius: 18px; box-shadow: var(--shadow); padding: 22px; animation: esc-pop .22s cubic-bezier(.2,.9,.3,1.2); }
 .modal-x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; display: grid; place-items: center;
-  border-radius: 9px; border: 1px solid var(--border); background: transparent; color: var(--muted-2); cursor: pointer; font-size: 13px; }
+  padding: 0; border-radius: 9px; border: 1px solid var(--border); background: transparent; color: var(--muted-2); cursor: pointer; font-size: 13px; }
 .modal-x:hover { color: var(--text); border-color: var(--accent); }
 .modal-tit { margin: 0 0 8px; font-size: 17px; font-weight: 600; padding-right: 28px; }
 .modal-cuerpo { color: var(--muted-2); font-size: 14px; line-height: 1.5; }

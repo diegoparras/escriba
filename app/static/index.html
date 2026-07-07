@@ -364,8 +364,10 @@
   .rl-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
   @media (max-width: 560px) { .rl-cards { grid-template-columns: 1fr; } }
   .tabs { display: flex; gap: 6px; }
-  .tab { font-size: 13px; padding: 7px 13px; border-radius: 10px; cursor: pointer; color: var(--muted); border: 1px solid transparent; }
-  .tab:hover { color: var(--text); }
+  .tab { font-size: 13px; padding: 7px 13px; border-radius: 10px; cursor: pointer; color: var(--muted);
+    border: 1px solid transparent; background: transparent; -webkit-appearance: none; appearance: none;
+    font-family: inherit; transition: background .14s, color .14s, border-color .14s; }
+  .tab:not(.active):hover { color: var(--text); background: color-mix(in srgb, var(--muted) 12%, transparent); }
   .tab.active { color: var(--text); background: var(--card); border-color: var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .view { display: grid; gap: 12px; }
   .view.split { grid-template-columns: 1fr 1fr; }
@@ -444,8 +446,10 @@
   .modal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
   .modal-head h3 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
   .modal-close { margin-left: auto; cursor: pointer; color: var(--muted); border: 1px solid var(--border);
-    background: var(--card); width: 32px; height: 32px; border-radius: 9px; font-size: 15px; }
-  .modal-close:hover { color: var(--err); }
+    background: var(--card); width: 32px; height: 32px; border-radius: 9px; font-size: 15px;
+    display: grid; place-items: center; line-height: 1; padding: 0; -webkit-appearance: none; appearance: none;
+    transition: color .14s, border-color .14s; }
+  .modal-close:hover { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--border)); }
   /* ===== Editor: pestañas Markdown · JSON · Tabla ===== */
   .mde-tabs { display: inline-flex; gap: 2px; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
   .mde-tab { font: inherit; font-size: 13px; font-weight: 550; color: var(--muted); background: none; border: 0; border-radius: 7px; padding: 6px 13px; cursor: pointer; transition: background .14s, color .14s; }
@@ -503,8 +507,8 @@
   .settings-tabs .tab { font-weight: 600; }
   .settings-tabs .tab.active { color: var(--accent);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-    box-shadow: 0 2px 8px -4px color-mix(in srgb, var(--accent) 55%, transparent); }
+    border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+    box-shadow: none; }
   .stab-panel { min-height: 96px; }
   .fmt-group { margin: 14px 0; }
   .fmt-group h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }

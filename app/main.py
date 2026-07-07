@@ -800,20 +800,6 @@ def _pdf_subset(path, sel):
         doc.close()
 
 
-# Comentario de diapositiva que MarkItDown deja en los PPTX (invisible en el render).
-# Lo normalizamos al marcador visible + ancla cuando el usuario pide marcar páginas.
-_SLIDE_RE = re.compile(r"<!--\s*Slide number:\s*(\d+)\s*-->", re.IGNORECASE)
-
-
-def _mark_slides(md: str) -> str:
-    """Convierte los `<!-- Slide number: N -->` de MarkItDown en el marcador de
-    Escriba (`<!-- page:N -->` + `**Diapositiva N**`), para que las diapositivas
-    queden citables igual que las páginas de PDF."""
-    return _SLIDE_RE.sub(
-        lambda m: pdf_extract.page_marker(int(m.group(1)), "Diapositiva"), md
-    )
-
-
 @app.post("/api/pdf_pages")
 async def pdf_pages(request: Request, file: UploadFile = File(...)):
     """Devuelve la cantidad de páginas de un PDF (para el asistente de selección)."""
@@ -1026,7 +1012,7 @@ async def convert(
                 # PPTX: MarkItDown ya delimita cada diapositiva con un comentario; si el
                 # usuario pidió marcar, lo hacemos visible + citable ("Diapositiva N").
                 if want_marks and ext in ("pptx", "ppt"):
-                    out_md = _mark_slides(out_md)
+                    out_md = pdf_extract.mark_slides(out_md)
             source_name = file.filename
     except HTTPException:
         STATS["errors"] += 1

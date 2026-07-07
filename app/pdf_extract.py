@@ -142,6 +142,18 @@ def page_marker(n: int, label: str = "Página") -> str:
     return f"<!-- page:{n} -->\n**{label} {n}**"
 
 
+# Comentario de diapositiva que MarkItDown deja en cada slide de un PPTX (invisible
+# en el render). Lo normalizamos al marcador de Escriba cuando se pide marcar páginas.
+_SLIDE_RE = re.compile(r"<!--\s*Slide number:\s*(\d+)\s*-->", re.IGNORECASE)
+
+
+def mark_slides(md: str) -> str:
+    """Convierte los `<!-- Slide number: N -->` de MarkItDown en el marcador de
+    Escriba (`<!-- page:N -->` + `**Diapositiva N**`), para que las diapositivas de
+    un PPTX queden citables por el LLM igual que las páginas de un PDF."""
+    return _SLIDE_RE.sub(lambda m: page_marker(int(m.group(1)), "Diapositiva"), md)
+
+
 def extract_pdf_text(path: str, mark_pages: bool = False, page_numbers=None) -> str:
     """Devuelve el texto del PDF respetando la rotación de cada página.
 

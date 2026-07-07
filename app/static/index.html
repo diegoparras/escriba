@@ -289,8 +289,9 @@
   .chip.converting { background: rgba(255,214,10,.14); color: var(--warn); }
   .chip.done { background: rgba(48,209,88,.14); color: var(--ok); }
   .chip.error { background: rgba(255,69,58,.14); color: var(--err); }
-  .item .x { cursor: pointer; color: var(--muted); padding: 4px; font-size: 15px; }
-  .item .x:hover { color: var(--err); }
+  .item .x { cursor: pointer; color: var(--muted); padding: 5px; display: grid; place-items: center; border-radius: 7px; background: transparent; border: 0; -webkit-appearance: none; appearance: none; transition: color .14s, background .14s; }
+  .item .x svg { width: 16px; height: 16px; display: block; }
+  .item .x:hover { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
   /* barra de progreso por archivo */
   .pbar { height: 5px; background: rgba(128,128,128,.2); border-radius: 99px; overflow: hidden; margin: 0 17px 14px; }
   .pbar > span { display: block; height: 100%; width: 0%; border-radius: 99px; background: linear-gradient(90deg, var(--blue), var(--accent-2)); transition: width .3s ease; }
@@ -448,8 +449,9 @@
   .modal-close { margin-left: auto; cursor: pointer; color: var(--muted); border: 1px solid var(--border);
     background: var(--card); width: 32px; height: 32px; border-radius: 9px; font-size: 15px;
     display: grid; place-items: center; line-height: 1; padding: 0; -webkit-appearance: none; appearance: none;
-    transition: color .14s, border-color .14s; }
-  .modal-close:hover { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--border)); }
+    transition: color .14s, border-color .14s, background .14s; }
+  .modal-close:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, var(--card));
+    border-color: color-mix(in srgb, var(--err) 45%, var(--border)); }
   /* ===== Editor: pestañas Markdown · JSON · Tabla ===== */
   .mde-tabs { display: inline-flex; gap: 2px; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
   .mde-tab { font: inherit; font-size: 13px; font-weight: 550; color: var(--muted); background: none; border: 0; border-radius: 7px; padding: 6px 13px; cursor: pointer; transition: background .14s, color .14s; }

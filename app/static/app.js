@@ -536,7 +536,7 @@ function itemHtml(it) {
         <div class="meta"><div class="name">${escapeHtml(it.name)}</div><div class="small">${escapeHtml(sub)}</div></div>
         ${pagesPickHtml(it)}
         <span class="chip ${it.status}" id="chip${it.id}">${chip}</span>
-        <button type="button" class="x" title="${escapeHtml(t("act.remove"))}" aria-label="${escapeHtml(t("act.remove"))}">✕</button>
+        <button type="button" class="x" title="${escapeHtml(t("act.remove"))}" aria-label="${escapeHtml(t("act.remove"))}">${IC_TRASH}</button>
       </div>
       ${pbar}
       <div class="item-body"></div>
@@ -1267,6 +1267,7 @@ const ES_CHEV = '<svg class="es-chev" viewBox="0 0 24 24" fill="none" stroke="cu
 const ES_CHECK = '<svg class="es-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 const IC_CHK = '<svg class="ic-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 const IC_X = '<svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const IC_TRASH = '<svg class="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>';
 const IC_WARN = '<svg class="ic-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
 const esNorm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 function esCloseAll(except) {

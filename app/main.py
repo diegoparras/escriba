@@ -781,21 +781,37 @@ def _parse_pages(spec):
 
 def _pdf_subset(path, sel):
     """Crea un PDF nuevo con SOLO las páginas (1-based) que existan en el original.
-    Devuelve el path del nuevo temporal, o None si ninguna página pedida existe."""
+    Devuelve `(path_nuevo, nums_originales)` donde `nums_originales` es la lista
+    1-based de las páginas conservadas (para poder marcar la página REAL del archivo
+    aunque quede recortado), o `(None, None)` si ninguna página pedida existe."""
     import fitz
     doc = fitz.open(path)
     try:
         n = doc.page_count
         keep = [p - 1 for p in sel if 1 <= p <= n]
         if not keep:
-            return None
+            return None, None
         doc.select(keep)
         fd, out = tempfile.mkstemp(suffix=".pdf")
         os.close(fd)
         doc.save(out)
-        return out
+        return out, [p + 1 for p in keep]
     finally:
         doc.close()
+
+
+# Comentario de diapositiva que MarkItDown deja en los PPTX (invisible en el render).
+# Lo normalizamos al marcador visible + ancla cuando el usuario pide marcar páginas.
+_SLIDE_RE = re.compile(r"<!--\s*Slide number:\s*(\d+)\s*-->", re.IGNORECASE)
+
+
+def _mark_slides(md: str) -> str:
+    """Convierte los `<!-- Slide number: N -->` de MarkItDown en el marcador de
+    Escriba (`<!-- page:N -->` + `**Diapositiva N**`), para que las diapositivas
+    queden citables igual que las páginas de PDF."""
+    return _SLIDE_RE.sub(
+        lambda m: pdf_extract.page_marker(int(m.group(1)), "Diapositiva"), md
+    )
 
 
 @app.post("/api/pdf_pages")
@@ -837,6 +853,7 @@ async def convert(
     ocr: Optional[str] = Form(default=None),
     advanced: Optional[str] = Form(default=None),
     pages: Optional[str] = Form(default=None),
+    mark_pages: Optional[str] = Form(default=None),
     yt_cookies: Optional[str] = Form(default=None),
     anonymize: Optional[str] = Form(default=None),
     anon_strict: Optional[str] = Form(default=None),
@@ -847,6 +864,7 @@ async def convert(
     role = _require(request)
     caps = auth.caps_for(role)
     use_ocr = str(ocr).lower() in ("1", "true", "yes", "on")
+    want_marks = str(mark_pages).lower() in ("1", "true", "yes", "on")
     if use_ocr and not caps["ocr"]:
         raise HTTPException(status_code=403, detail="Tu rol no puede usar OCR.")
 
@@ -877,6 +895,7 @@ async def convert(
     source_name = None
     file_basename = file.filename if file else None   # nombre ORIGINAL (para aviso PII)
     invoice_pii = []   # campos PII de un comprobante (layout); se calcula con el PDF a mano
+    page_numbers = None   # numeración ORIGINAL del PDF si se recortó (para el marcador de página)
     want_anon = (anonymize or "").strip().lower() in anonimal_mod.MODES
 
     try:
@@ -937,7 +956,7 @@ async def convert(
                 sel = _parse_pages(pages)
                 if sel is None:
                     raise HTTPException(status_code=400, detail="Rango de páginas inválido. Usá, por ejemplo, 1-23 o 1,6,9.")
-                sub = await asyncio.to_thread(_pdf_subset, tmp_path, sel)
+                sub, page_numbers = await asyncio.to_thread(_pdf_subset, tmp_path, sel)
                 if sub is None:
                     raise HTTPException(status_code=400, detail="Ninguna de las páginas pedidas existe en el PDF.")
                 try:
@@ -963,7 +982,7 @@ async def convert(
             elif use_ocr and ext == "pdf":
                 ocr_out = await asyncio.to_thread(ocr_mod.ocr_pdf, tmp_path, tess)
                 # Extraemos con PyMuPDF (respeta rotación) en vez de pdfminer.
-                out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, ocr_out)
+                out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, ocr_out, want_marks, page_numbers)
                 pdf_type, ocr_applied = "escaneado (OCR forzado)", True
             elif ext in IMAGE_EXTS and (use_ocr or (caps["ocr"] and not eff_key)):
                 # OCR de imagen: forzado, o automático cuando no hay IA (key) en juego.
@@ -974,12 +993,15 @@ async def convert(
                 # de lectura + tablas) o la clásica con PyMuPDF (respeta rotación).
                 use_adv = str(advanced).lower() in ("1", "true", "yes", "on") and odl_mod.available()
                 if use_adv:
+                    # OpenDataLoader devuelve un Markdown estructurado monolítico (sin
+                    # cortes por página): el marcado de página aplica solo si cae al
+                    # fallback clásico. En modo avanzado no se marca (limitación de v1).
                     try:
                         out_md = await asyncio.to_thread(odl_mod.extract_markdown, tmp_path)
                     except odl_mod.ODLError:
-                        out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, tmp_path)
+                        out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, tmp_path, want_marks, page_numbers)
                 else:
-                    out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, tmp_path)
+                    out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, tmp_path, want_marks, page_numbers)
                 title = pdf_extract.pdf_title(tmp_path)
                 # Si se va a anonimizar y es un comprobante, capturamos los campos
                 # PII por layout (etiqueta→valor) AHORA, con el PDF todavía en disco.
@@ -991,7 +1013,7 @@ async def convert(
                     if caps["ocr"]:
                         # Auto-OCR: lo aplicamos solo, sin que el usuario tilde nada.
                         ocr_out = await asyncio.to_thread(ocr_mod.ocr_pdf, tmp_path, tess)
-                        out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, ocr_out)
+                        out_md = await asyncio.to_thread(pdf_extract.extract_pdf_text, ocr_out, want_marks, page_numbers)
                         ocr_applied = True
                     else:
                         note = "scanned"   # clave i18n (note.scanned); la UI traduce
@@ -1001,6 +1023,10 @@ async def convert(
                 result = await asyncio.to_thread(_do_convert, md, tmp_path, lang)
                 out_md = result.text_content or ""
                 title = getattr(result, "title", None)
+                # PPTX: MarkItDown ya delimita cada diapositiva con un comentario; si el
+                # usuario pidió marcar, lo hacemos visible + citable ("Diapositiva N").
+                if want_marks and ext in ("pptx", "ppt"):
+                    out_md = _mark_slides(out_md)
             source_name = file.filename
     except HTTPException:
         STATS["errors"] += 1

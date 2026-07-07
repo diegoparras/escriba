@@ -1455,6 +1455,7 @@ function convertOne(it) {
     const langVal = $("lang").value; if (langVal && langVal !== "auto") fd.append("lang", langVal);
     if (CAPS.ocr && $("ocrChk").checked) fd.append("ocr", "true");
     if (CAPS.advancedExtract && $("advChk").checked) fd.append("advanced", "true");
+    if ($("marksChk")?.checked) fd.append("mark_pages", "true");   // marcar nº de página/diapositiva (PDF/PPTX)
     if (it.pages) fd.append("pages", it.pages);   // selección por-archivo del asistente (solo aplica a PDF)
     // Anonimización de PII (si está habilitada y el usuario eligió un modo).
     if (CAPS.anonimal) {

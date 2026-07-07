@@ -134,14 +134,34 @@ def invoice_field_values(path: str):
         doc.close()
 
 
-def extract_pdf_text(path: str) -> str:
-    """Devuelve el texto del PDF respetando la rotación de cada página."""
+def page_marker(n: int, label: str = "Página") -> str:
+    """Marcador de página: ancla máquina-legible (para RAG/citas del LLM) + línea
+    visible para el humano. NO usa encabezado Markdown (`##`) a propósito, para no
+    contaminar la jerarquía de títulos real del documento. El ancla `page:N` es
+    única para PDF y PPTX, así un solo regex `<!-- page:(\\d+) -->` las cita a todas."""
+    return f"<!-- page:{n} -->\n**{label} {n}**"
+
+
+def extract_pdf_text(path: str, mark_pages: bool = False, page_numbers=None) -> str:
+    """Devuelve el texto del PDF respetando la rotación de cada página.
+
+    Si `mark_pages` es True, antepone a cada página su marcador (ancla + `**Página N**`).
+    `page_numbers` permite pasar la numeración ORIGINAL del PDF (1-based) cuando el
+    documento fue recortado a un subconjunto: así el marcador cita la página real del
+    archivo, no la posición dentro del recorte. Si no viene, se numera 1..N."""
     doc = pymupdf.open(path)
     try:
-        pages = []
-        for page in doc:
-            pages.append(page.get_text("text"))
-        return "\n\n".join(p.strip() for p in pages if p.strip()).strip()
+        parts = []
+        for idx, page in enumerate(doc):
+            txt = page.get_text("text").strip()
+            if not txt:
+                continue
+            if mark_pages:
+                num = page_numbers[idx] if page_numbers and idx < len(page_numbers) else idx + 1
+                parts.append(f"{page_marker(num)}\n\n{txt}")
+            else:
+                parts.append(txt)
+        return "\n\n".join(parts).strip()
     finally:
         doc.close()
 

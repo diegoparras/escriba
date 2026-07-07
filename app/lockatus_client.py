@@ -18,15 +18,25 @@ _b64d = lambda s: base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 _b64e = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
 
 
+def _require_http_url(url: str) -> str:
+    """Solo HTTP(S): urlopen también acepta file://, ftp:// y esquemas custom, que
+    no deben salir del cliente OIDC. Defensa en profundidad — la URL deriva del
+    issuer (env del admin), pero se valida igual (cierra bandit B310)."""
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError(f"esquema de URL no permitido para el issuer: {url!r}")
+    return url
+
+
 def _get_json(url: str):
-    with urllib.request.urlopen(url, timeout=10) as r:  # noqa: S310 (URL del issuer, de confianza)
+    with urllib.request.urlopen(_require_http_url(url), timeout=10) as r:  # noqa: S310  # nosec B310
         return json.loads(r.read())
 
 
 def _post_form(url: str, data: dict):
+    _require_http_url(url)
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310  # nosec B310
         return json.loads(r.read())
 
 

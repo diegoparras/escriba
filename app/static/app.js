@@ -514,7 +514,7 @@ function itemSub(it) {
     const w = it.result.words || 0, c = it.result.chars || 0;
     sub = t("sub.stats", { w: w.toLocaleString(), c: c.toLocaleString(), ms: it.result.elapsed_ms, min: Math.max(1, Math.round(w / 200)) }) + pdfBadge(it.result);
     if (it.result.anonymized) sub += ` · ${t("sub.anon", { n: it.result.pii_count ?? 0 })}`;
-    if (it.result.note) sub += ` · ⚠️ ${noteText(it.result.note)}`;
+    if (it.result.note) sub += ` · ${noteText(it.result.note)}`;
   } else if (it.status === "error") sub = it.error;
   else sub = it.isUrl ? t("sub.url") : humanSize(it.size);
   return sub;
@@ -545,7 +545,7 @@ function itemHtml(it) {
 }
 function chipText(it) {
   if (it.phase === "processing") return `<span class="spinner"></span> ${t("chip.processing")}`;
-  return `⬆ ${Math.round(it.progress)}%`;
+  return `↑ ${Math.round(it.progress)}%`;
 }
 function updateProgressDom(it) {
   const pb = $("pb" + it.id); if (pb) pb.style.width = it.progress + "%";
@@ -743,7 +743,8 @@ function appendLlmFields(fd) {
   }
 }
 
-function _ttsGenderMark(g) { return g === "f" ? " ♀" : g === "m" ? " ♂" : ""; }
+// <option> solo admite texto: F/M en lugar de pictogramas (regla de marca: sin emojis).
+function _ttsGenderMark(g) { return g === "f" ? " · F" : g === "m" ? " · M" : ""; }
 function _ttsFillVoices(sel, voices) {
   const piper = voices.filter(v => v.engine === "piper");
   const cloud = voices.filter(v => v.engine === "openai");
@@ -757,11 +758,15 @@ function _ttsFillVoices(sel, voices) {
   sel.innerHTML = html || `<option value="">—</option>`;
 }
 
+// Iconos SVG line del reproductor (sin emojis: regla de marca).
+const I_PLAY = '<svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>';
+const I_PAUSE = '<svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+
 // Reproductor flotante: al cerrar el modal con el audio sonando, aparece un mini
 // player fijo para pausarlo/detenerlo (si no, el audio seguía sonando sin control).
 function syncTtsFloat() {
   const a = $("ttsAudio"), b = $("ttsFloatToggle");
-  if (a && b) b.textContent = a.paused ? "▶" : "⏸";
+  if (a && b) b.innerHTML = a.paused ? I_PLAY : I_PAUSE;
 }
 function showTtsFloat() { $("ttsFloat")?.classList.remove("hidden"); syncTtsFloat(); }
 function hideTtsFloat() { $("ttsFloat")?.classList.add("hidden"); }
@@ -1612,7 +1617,12 @@ $("rehyCopy")?.addEventListener("click", async () => {
 // ---------- Reglas de anonimización propias (Bring Your Own Rules) ----------
 const RULES_STORE = "escriba_anon_rules";
 function getAnonRules() { try { return localStorage.getItem(RULES_STORE) || ""; } catch { return ""; } }
-function rulesStatus(msg) { const e = $("rulesStatus"); if (e) e.textContent = msg || ""; }
+// El estado se marca con color (tokens --ok / --err), no con pictogramas.
+function rulesStatus(msg, kind) {
+  const e = $("rulesStatus"); if (!e) return;
+  e.textContent = msg || "";
+  e.style.color = kind === "ok" ? "var(--ok)" : kind === "err" ? "var(--err)" : "";
+}
 (function initAnonRules() {
   const ta = $("anonRules"); if (!ta) return;
   const actions = $("rulesActions");
@@ -1641,9 +1651,9 @@ function rulesStatus(msg) { const e = $("rulesStatus"); if (e) e.textContent = m
     try {
       const r = await fetch("/api/anon_rules/validate", { method: "POST", body: fd });
       const d = await r.json();
-      if (r.ok) rulesStatus("✅ " + t("rules.ok", { p: d.patterns || 0, l: d.labels || 0, k: d.keep || 0 }));
-      else rulesStatus("⚠️ " + (d.detail || "error"));
-    } catch { rulesStatus("⚠️ " + t("rules.neterr")); }
+      if (r.ok) rulesStatus(t("rules.ok", { p: d.patterns || 0, l: d.labels || 0, k: d.keep || 0 }), "ok");
+      else rulesStatus(d.detail || "error", "err");
+    } catch { rulesStatus(t("rules.neterr"), "err"); }
   });
 })();
 

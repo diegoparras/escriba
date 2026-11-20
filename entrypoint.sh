@@ -26,9 +26,14 @@ fi
 
 if [ -z "$GOD_PASSWORD" ] && [ -z "$ANGEL_PASSWORD" ] && [ -z "$HUMAN_PASSWORD" ] && [ "${HUMAN_OPEN:-false}" != "true" ]; then
   export GOD_PASSWORD="$(python -c 'import secrets;print(secrets.token_urlsafe(12))')"
+  # La clave NUNCA va al log (los registros los ve cualquiera con acceso al panel): queda en
+  # un archivo legible solo por el usuario de la app, que se lee desde la consola del servicio.
+  CLAVE_ARCHIVO="${GOD_PASSWORD_FILE:-/tmp/escriba-god-password}"
+  ( umask 077 && printf '%s\n' "$GOD_PASSWORD" > "$CLAVE_ARCHIVO" )
   echo "──────────────────────────────────────────────"
-  echo " [!] No definiste contraseñas. GOD_PASSWORD para este arranque:"
-  echo "     $GOD_PASSWORD"
+  echo " [!] No definiste contraseñas: se generó una GOD_PASSWORD para este arranque."
+  echo "     No se muestra en el log. Leela desde la consola del servicio:"
+  echo "       cat $CLAVE_ARCHIVO"
   echo "     (definí GOD_PASSWORD/ANGEL_PASSWORD/HUMAN_PASSWORD como env para fijarlas)"
   echo "──────────────────────────────────────────────"
 fi
@@ -41,7 +46,8 @@ fi
 # ---------------------------------------------------------------------------
 REDIS_MODE="memoria (por proceso)"
 if [ -n "$REDIS_URL" ]; then
-  REDIS_MODE="externo ($REDIS_URL)"
+  # Sin credenciales en el log: redis://usuario:clave@host -> redis://***@host
+  REDIS_MODE="externo ($(printf '%s' "$REDIS_URL" | sed -E 's#//[^@/]*@#//***@#'))"
 elif [ "${EMBEDDED_REDIS:-true}" != "false" ]; then
   redis-server --save "" --appendonly no --dir /tmp --bind 127.0.0.1 --port 6379 --loglevel warning &
   # Esperar a que responda antes de arrancar la app (los workers se conectan al importar).

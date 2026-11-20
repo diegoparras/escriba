@@ -923,7 +923,7 @@ async def convert(
                         status_code=422,
                         detail="No se pudo obtener la transcripción. El video puede no tener subtítulos, "
                                "o YouTube bloqueó el pedido desde el servidor. Probá pegar tus cookies de "
-                               "YouTube en ⚙ Configuración → Cookies de YouTube.",
+                               "YouTube en Configuración → Cookies de YouTube.",
                     )
             elif caps["allow_internal"]:
                 # DIOS → poder total (incluye rutas locales / file:// / red interna).

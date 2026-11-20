@@ -4,6 +4,19 @@ Todos los cambios importantes de Escriba se anotan aca. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es/1.0.0/); versionado semantico.
 La version instalada vive en el archivo `VERSION` y cada deploy tiene que tener su seccion.
 
+## [1.15.4] - 2026-11-20
+
+### Seguridad
+- La contrasena que se genera cuando no se definio ninguna (GOD_PASSWORD) ya no se escribe
+  en los registros del contenedor: queda en un archivo legible solo por la app y el log dice
+  como leerla desde la consola del servicio (`cat /tmp/escriba-god-password`).
+- Si `REDIS_URL` trae usuario y clave, el log de arranque las oculta (`redis://***@host`).
+
+### Cambiado
+- Sin emojis en la interfaz (regla de marca de la suite): el reproductor de audio usa iconos
+  de linea, la validacion de reglas marca el resultado con color, y los avisos y guias usan
+  texto o iconos de linea.
+
 ## [1.15.3] - 2026-11-20
 
 ### Corregido

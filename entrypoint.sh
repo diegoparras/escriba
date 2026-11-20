@@ -46,7 +46,7 @@ fi
 # ---------------------------------------------------------------------------
 REDIS_MODE="memoria (por proceso)"
 if [ -n "$REDIS_URL" ]; then
-  # Sin credenciales en el log: redis://usuario:clave@host -> redis://***@host
+  # Sin credenciales en el log: lo que va entre // y @ (usuario y clave) se muestra como ***
   REDIS_MODE="externo ($(printf '%s' "$REDIS_URL" | sed -E 's#//[^@/]*@#//***@#'))"
 elif [ "${EMBEDDED_REDIS:-true}" != "false" ]; then
   redis-server --save "" --appendonly no --dir /tmp --bind 127.0.0.1 --port 6379 --loglevel warning &

@@ -4,6 +4,12 @@ Todos los cambios importantes de Escriba se anotan aca. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es/1.0.0/); versionado semantico.
 La version instalada vive en el archivo `VERSION` y cada deploy tiene que tener su seccion.
 
+## [1.15.5] - 2026-11-20
+
+### Corregido
+- La auditoria de seguridad del CI marcaba como credencial un comentario de ejemplo del
+  arranque (falso positivo de detect-secrets). Sin cambios de funcionamiento.
+
 ## [1.15.4] - 2026-11-20
 
 ### Seguridad

@@ -132,6 +132,17 @@ example.com {
 With Nginx, proxy to `localhost:8000` and raise `client_max_body_size` for large uploads.
 </details>
 
+### Versions & release notes
+
+The version lives in the `VERSION` file and every version has its section in
+[`CHANGELOG.md`](CHANGELOG.md) (the build fails without it). On each deploy, the **first lines
+the container writes to its logs** (EasyPanel: service > Overview > Logs) are a banner with the
+version, its date and what changed. In the web UI, a **News** dialog shows up once per browser
+after an update, and it can be reopened from the menu (News) or from *About* (What changed).
+Each push to `main` publishes `ghcr.io/diegoparras/escriba:latest` and `:X.Y.Z`, and creates the
+GitHub Release `vX.Y.Z` with the same notes. To ship a change: bump the patch in `VERSION` and
+add its section at the top of the CHANGELOG.
+
 ---
 
 ## ⚙️ Configuration

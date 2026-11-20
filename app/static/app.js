@@ -136,7 +136,7 @@ function onAuthed(caps) {
   mountAnonOptions(caps);   // núcleo compartido (modo + indicador básico/completo)
   $("detectorsField")?.classList.toggle("hidden", !caps.anonimalFull);   // detectores: extra del modo completo
   $("stats").classList.toggle("hidden", caps.stats === "none");
-  // Versión real (la informa el servidor desde el tag de git).
+  // Versión real (la informa el servidor desde el archivo VERSION).
   if (caps.version) $("aboutVer").textContent = caps.version.startsWith("v") ? caps.version : "v" + caps.version;
   // Si el servidor ya tiene claves de IA, la del usuario es opcional.
   const sp = caps.serverProviders || [];
@@ -147,6 +147,7 @@ function onAuthed(caps) {
   loadModelPrices();
   startStats();
   consumeEcosystemHandoff();
+  setTimeout(avisarNovedades, 400);   // "qué cambió" una sola vez tras una actualización
 }
 
 // Puente del ecosistema: un satélite (Fulgoria, Fisherboy…) me pasa un documento ya en Markdown,
@@ -1761,6 +1762,54 @@ $("rememberKey").addEventListener("change", persistApiKey);
 // ---------- Triggers de modales + header sticky ----------
 $("formatsBtn").addEventListener("click", (e) => { e.stopPropagation(); openModal("formatsModal"); });
 $("aboutBtn").addEventListener("click", () => { closeMenus(); openModal("aboutModal"); });
+$("novedadesBtn").addEventListener("click", () => { closeMenus(); novedadesTodas(); });
+$("aboutNovBtn").addEventListener("click", () => { closeModal("aboutModal"); novedadesTodas(); });
+
+// ---------- Novedades: qué cambió en cada versión (sale del CHANGELOG del server) ----------
+// Aparece sola UNA vez por navegador después de una actualización (se recuerda la última
+// versión vista); también se abre desde el menú y desde "Acerca de".
+const NOV_STORE = "escriba.versionVista";
+function novMd(s) {
+  // Escapar SIEMPRE antes de convertir el poco markdown que usan las notas (**x** y `x`).
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+function novHtml(versiones) {
+  return versiones.map(v =>
+    `<div class="nov-ver"><b>v${novMd(v.version)}</b>${v.fecha ? `<span>${novMd(v.fecha)}</span>` : ""}</div>` +
+    v.secciones.map(s =>
+      (s.titulo ? `<div class="nov-sec">${novMd(s.titulo)}</div>` : "") +
+      `<ul class="nov-list">${s.items.map(i => `<li>${novMd(i)}</li>`).join("")}</ul>`).join("")
+  ).join("");
+}
+function verNovedades(r, bajada) {
+  $("novBajada").innerHTML = bajada;
+  $("novLista").innerHTML = r.versiones.length ? novHtml(r.versiones) : `<p class="nov-bajada">${novMd(t("nov.empty"))}</p>`;
+  openModal("novedadesModal");
+}
+async function avisarNovedades() {
+  let vista = null; try { vista = localStorage.getItem(NOV_STORE); } catch {}
+  let r;
+  try {
+    const res = await fetch("/api/novedades" + (vista ? "?desde=" + encodeURIComponent(vista) : ""));
+    if (!res.ok) return;
+    r = await res.json();
+  } catch { return; }
+  if (!/^\d+\.\d+\.\d+$/.test(r.version || "") || vista === r.version) return;
+  // Si el usuario ya está en otro modal no lo tapamos: se lo mostramos la próxima vez.
+  if (document.querySelector(".modal-backdrop:not(.hidden)")) return;
+  try { localStorage.setItem(NOV_STORE, r.version); } catch {}
+  if (!r.versiones.length) return;
+  verNovedades(r, novMd(t("nov.updated", { v: "v" + r.version })).replace(/v\d+\.\d+\.\d+/, m => `<b>${m}</b>`));
+}
+async function novedadesTodas() {
+  try {
+    const res = await fetch("/api/novedades?todas=1");
+    if (!res.ok) throw new Error(t("nov.error"));
+    const r = await res.json();
+    verNovedades(r, novMd(t("nov.installed", { v: "v" + r.version })).replace(/v\d+\.\d+\.\d+/, m => `<b>${m}</b>`));
+  } catch (e) { toast(e.message || t("nov.error"), "err"); }
+}
 function openSettings(tab) {
   closeMenus();
   openModal("settingsModal"); ytckShown = false; applyYtckMask();

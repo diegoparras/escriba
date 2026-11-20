@@ -6,6 +6,7 @@ __pycache__/
 venv/
 .env
 *.md
+!CHANGELOG.md
 docs/
 assets/
 node_modules/

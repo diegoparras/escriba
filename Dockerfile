@@ -5,9 +5,6 @@
 # de la base automáticamente en cada rebuild.
 FROM python:3.12-slim
 
-# Versión (la inyecta el CI desde el tag de git).
-ARG APP_VERSION=dev
-
 # Dependencias del sistema:
 # - ffmpeg: transcripción de audio (mp3/wav/m4a…)
 # - libmagic1: detección de tipo de archivo
@@ -103,6 +100,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
+# Versión (VERSION) y novedades (CHANGELOG): el cartel de arranque y la UI las leen de acá.
+COPY VERSION CHANGELOG.md ./
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 

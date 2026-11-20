@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+# Lo PRIMERO que se ve en los registros del contenedor (EasyPanel): versión y qué cambia,
+# sacado del CHANGELOG. Nunca frena el arranque.
+python -m app.novedades || true
+
 # ---------------------------------------------------------------------------
 # Workers (procesos en paralelo). "auto"/vacío => tantos como núcleos.
 # ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ from . import auth
 from . import detectors as detectors_mod
 from . import export as export_mod
 from . import llmprep as llmprep_mod
+from . import novedades as novedades_mod
 from . import ocr as ocr_mod
 from . import odl as odl_mod
 from . import pricing as pricing_mod
@@ -63,10 +64,11 @@ SCANNED_THRESHOLD = int(os.getenv("SCANNED_THRESHOLD", "30"))
 # Tope de duración para audio/video a transcribir (minutos). 0 = sin límite. DIOS no tiene tope.
 MAX_MEDIA_MINUTES = int(os.getenv("MAX_MEDIA_MINUTES", "120"))
 
-# Versión (la inyecta el build desde el tag de git; "dev" en local).
+# Versión: archivo VERSION (X.Y.Z, viaja en la imagen; cada versión tiene su sección en el
+# CHANGELOG). APP_VERSION la puede forzar; "dev" si no hay ninguna.
 # Se inyecta crudo en el HTML (reemplazo de __VER__), así que validamos el
-# formato (alfanumérico + .-_) para no permitir inyección si el tag viniera sucio.
-APP_VERSION = os.getenv("APP_VERSION", "dev")
+# formato (alfanumérico + .-_) para no permitir inyección si viniera sucio.
+APP_VERSION = os.getenv("APP_VERSION") or novedades_mod.version_instalada() or "dev"
 if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", APP_VERSION or ""):
     log = logging.getLogger("markitdown.web")
     log.warning("APP_VERSION con formato inesperado (%r); usando 'dev'.", APP_VERSION)
@@ -638,6 +640,23 @@ def health():
 def formats(request: Request):
     _require(request)
     return {"formats": SUPPORTED_FORMATS}
+
+
+_RE_SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+@app.get("/api/novedades")
+def novedades(request: Request, desde: Optional[str] = None, todas: Optional[str] = None):
+    """Qué cambió desde la última versión vista (sale del CHANGELOG). `todas=1`: historial
+    hasta la versión instalada. Misma auth que el resto de la API."""
+    _require(request)
+    vista = desde if desde and _RE_SEMVER.match(desde) else None
+    lista = novedades_mod.todas()
+    if todas == "1":
+        versiones = [x for x in lista if novedades_mod.comparar(x["version"], APP_VERSION) <= 0]
+    else:
+        versiones = novedades_mod.desde(lista, vista, APP_VERSION)
+    return {"version": APP_VERSION, "versiones": versiones[:15]}
 
 
 @app.get("/api/stats")

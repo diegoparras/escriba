@@ -4,6 +4,12 @@ Todos los cambios importantes de Escriba se anotan aca. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es/1.0.0/); versionado semantico.
 La version instalada vive en el archivo `VERSION` y cada deploy tiene que tener su seccion.
 
+## [1.15.3] - 2026-11-20
+
+### Corregido
+- La imagen ya no arrastra una variable `APP_VERSION` vacia del build anterior (el build daba
+  un aviso). La version sigue saliendo del archivo `VERSION`.
+
 ## [1.15.2] - 2026-11-20
 
 ### Nuevo

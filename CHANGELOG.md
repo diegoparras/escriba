@@ -4,6 +4,17 @@ Todos los cambios importantes de Escriba se anotan aca. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es/1.0.0/); versionado semantico.
 La version instalada vive en el archivo `VERSION` y cada deploy tiene que tener su seccion.
 
+## [1.15.6] - 2026-11-21
+
+### Cambiado
+- El `docker-compose.yml` usa la imagen actual de Anonimal (`ghcr.io/diegoparras/anonimal-svc`)
+  con el motor en `auto`; la vieja (`ghcr.io/diegoparras/anonimal`) ya no se actualiza.
+  `.env.example` documenta `ANONIMAL_TOKEN` para cuando el servicio lo pide.
+
+### Quitado
+- La copia vieja de Anonimal dentro de este repo (`anonimal/`) y el workflow que la publicaba.
+  Anonimal vive en su propio repo (`diegoparras/anonimal`).
+
 ## [1.15.5] - 2026-11-20
 
 ### Corregido

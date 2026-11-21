@@ -172,7 +172,7 @@ container **logs** on startup.
 | `API_TOKEN` / `API_TOKEN_ROLE` | — / `angel` | Static token for automation (n8n, scripts) and the role it maps to. |
 | `EMBEDDED_REDIS` | `true` | Built‑in Redis for shared rate limiting. Set `false` + `REDIS_URL` for an external one. |
 | `YT_PROXY` / `YT_COOKIES` | — | Optional proxy / cookies.txt for YouTube if its transcripts are blocked from your server IP. Users can also paste their own cookies in **⚙ Settings → YouTube cookies** (no file or restart needed). |
-| `ANONIMAL_URL` | — | Enables PII anonymization. Point it at the internal **Anonimal** service (e.g. `http://anonimal:8000`). Leave empty to hide the feature. See [`anonimal/`](anonimal/). |
+| `ANONIMAL_URL` | — | Enables PII anonymization. Point it at the internal **Anonimal** service (e.g. `http://anonimal:8000`). Leave empty to hide the feature. Service and image: [diegoparras/anonimal](https://github.com/diegoparras/anonimal) (`ghcr.io/diegoparras/anonimal-svc`). |
 | `ENABLE_DOCS` | `false` | Expose Swagger at `/api/docs`. |
 | `PORT` | `8000` | Container port. |
 
@@ -218,7 +218,7 @@ across workers via the embedded Redis.
 Escriba can strip or replace personal data **before** the text reaches an LLM — and
 put it back afterwards. The heavy model runs in a separate, internal‑only service
 (**Anonimal**, bundling [OpenAI Privacy Filter](https://github.com/openai/privacy-filter)),
-enabled by pointing `ANONIMAL_URL` at it (see [`anonimal/`](anonimal/)).
+enabled by pointing `ANONIMAL_URL` at it (see [diegoparras/anonimal](https://github.com/diegoparras/anonimal)).
 
 **Layered detection (high recall by design):**
 - **NER model** — names, organizations, locations, dates.

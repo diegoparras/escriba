@@ -23,17 +23,23 @@ services:
     # cpus: "4.0"
 
   # ── Anonimal: anonimización de PII (OPF) ──────────────────────────────────
-  # Imagen aparte con el modelo horneado (~5 GB en RAM). SOLO red interna:
-  # NO tiene "ports", así no se expone a internet; solo Escriba le pega.
+  # Servicio aparte (repo diegoparras/anonimal), imagen con el modelo horneado
+  # (~5 GB en RAM). SOLO red interna: NO tiene "ports", así no se expone a
+  # internet; solo Escriba le pega.
+  # Variante liviana (solo regex, sin modelo): image ...anonimal-svc:lite.
   anonimal:
-    image: ghcr.io/diegoparras/anonimal:latest
-    # Para construir local en vez de bajar la imagen:  build: ./anonimal
+    image: ghcr.io/diegoparras/anonimal-svc:latest
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     environment:
+      # auto: usa el modelo cuando terminó de cargar; mientras tanto, regex.
+      - ANONIMAL_ENGINE=auto
       - OPF_DEVICE=cpu
       - ANONIMAL_MAX_CHARS=500000
+      # Si lo compartís con otras apps, definí el mismo token acá y en el .env
+      # de Escriba (ANONIMAL_TOKEN): sin token, la API queda abierta en la red.
+      # - ANONIMAL_TOKEN=${ANONIMAL_TOKEN}
     # El modelo usa ~5 GB residentes; dejá aire.
     # mem_limit: 6g
 
